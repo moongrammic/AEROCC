@@ -5,12 +5,6 @@ namespace AEROCC.Core.Hid;
 public class GigabyteKeyboardClient
 {
     private const int GigabyteVid = 0x0414;
-    private static readonly HashSet<int> KnownPids = new()
-    {
-        0x8100, 0x8101, 0x8102, 0x8103, 0x8104, 0x8105, 0x8106, 0x8107,
-        0x8200, 0x8201, 0x8202, 0x8203, 0x8204, 0x8205, 0x8206, 0x8207
-    };
-
     private HidDevice? _keyboardDevice;
 
     public bool IsConnected => _keyboardDevice != null;
@@ -24,7 +18,8 @@ public class GigabyteKeyboardClient
             {
                 try
                 {
-                    if (dev.GetMaxFeatureReportLength() >= 9)
+                    // Aero 16 keyboard controller feature report is exactly 9 bytes (mi_03)
+                    if (dev.GetMaxFeatureReportLength() == 9)
                     {
                         if (TestKeyboardDevice(dev))
                         {
@@ -35,7 +30,7 @@ public class GigabyteKeyboardClient
                 }
                 catch
                 {
-                    // Continue searching
+                    // Ignore and try next device
                 }
             }
         }
@@ -54,17 +49,17 @@ public class GigabyteKeyboardClient
         {
             try
             {
-                int len = Math.Max(9, dev.GetMaxFeatureReportLength());
-                byte[] report = new byte[len];
+                byte[] report = new byte[9];
                 report[0] = 0;
-                report[1] = 128; // 0x80 test ping
+                report[1] = 128; // 0x80 ping command
                 byte sum = 0;
                 for (int i = 1; i <= 7; i++) sum += report[i];
                 report[8] = (byte)(255 - sum);
 
                 stream.SetFeature(report);
+                Thread.Sleep(20);
 
-                byte[] response = new byte[len];
+                byte[] response = new byte[9];
                 response[0] = 0;
                 stream.GetFeature(response);
                 return response[1] == 128;
@@ -76,10 +71,12 @@ public class GigabyteKeyboardClient
         }
     }
 
-    public bool? GetFnLock() => QueryStatus(14);
+    // Read addresses have high bit set: 142 (0x8E) for FnLock, 143 (0x8F) for WinLock
+    // Write addresses: 14 (0x0E) for FnLock, 15 (0x0F) for WinLock
+    public bool? GetFnLock() => QueryStatus(142);
     public bool SetFnLock(bool locked) => SendCommand(14, locked);
 
-    public bool? GetWinLock() => QueryStatus(15);
+    public bool? GetWinLock() => QueryStatus(143);
     public bool SetWinLock(bool locked) => SendCommand(15, locked);
 
     private bool? QueryStatus(byte address)
@@ -91,8 +88,7 @@ public class GigabyteKeyboardClient
         {
             try
             {
-                int len = Math.Max(9, _keyboardDevice.GetMaxFeatureReportLength());
-                byte[] report = new byte[len];
+                byte[] report = new byte[9];
                 report[0] = 0;
                 report[1] = address;
                 byte sum = 0;
@@ -100,8 +96,9 @@ public class GigabyteKeyboardClient
                 report[8] = (byte)(255 - sum);
 
                 stream.SetFeature(report);
+                Thread.Sleep(20);
 
-                byte[] response = new byte[len];
+                byte[] response = new byte[9];
                 response[0] = 0;
                 stream.GetFeature(response);
                 return response[2] != 0;
@@ -123,8 +120,7 @@ public class GigabyteKeyboardClient
         {
             try
             {
-                int len = Math.Max(9, _keyboardDevice.GetMaxFeatureReportLength());
-                byte[] report = new byte[len];
+                byte[] report = new byte[9];
                 report[0] = 0;
                 report[1] = address;
                 report[2] = (byte)(value ? 1 : 0);
@@ -133,6 +129,7 @@ public class GigabyteKeyboardClient
                 report[8] = (byte)(255 - sum);
 
                 stream.SetFeature(report);
+                Thread.Sleep(50);
                 return true;
             }
             catch (Exception ex)
