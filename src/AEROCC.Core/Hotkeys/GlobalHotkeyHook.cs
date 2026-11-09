@@ -34,23 +34,16 @@ public class GlobalHotkeyHook : IDisposable
     private const int WM_SYSKEYDOWN = 0x0104;
     private const int WM_SYSKEYUP = 0x0105;
 
+    // Targeted Virtual Key Codes
     public const uint VK_SPACE = 0x20;
     public const uint VK_F4 = 0x73;
     public const uint VK_F7 = 0x76;
     public const uint VK_F9 = 0x78;
     public const uint VK_F10 = 0x79;
-    public const uint VK_F20 = 0x83; // Mic Mute
-    public const uint VK_F21 = 0x84; // Airplane / Radio
-    public const uint VK_F23 = 0x86; // GiMATE / Copilot
-    public const uint VK_F24 = 0x87; // Touchpad toggle
-    public const uint VK_LWIN = 0x5B;
-    public const uint VK_RWIN = 0x5C;
-    public const uint VK_LSHIFT = 0xA0;
-    public const uint VK_RSHIFT = 0xA1;
-    public const uint VK_LCONTROL = 0xA2;
-    public const uint VK_RCONTROL = 0xA3;
-    public const uint VK_LMENU = 0xA4;
-    public const uint VK_RMENU = 0xA5;
+    public const uint VK_FN = 0x83;  // Physical Fn key on Gigabyte Aero 16
+    public const uint VK_F21 = 0x84; // Airplane / Radio key
+    public const uint VK_F23 = 0x86; // GiMATE / Copilot key
+    public const uint VK_F24 = 0x87; // Precision Touchpad toggle key
 
     [StructLayout(LayoutKind.Sequential)]
     public struct KBDLLHOOKSTRUCT
@@ -77,12 +70,10 @@ public class GlobalHotkeyHook : IDisposable
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern IntPtr GetModuleHandle(string? lpModuleName);
 
-    [DllImport("user32.dll")]
-    private static extern short GetAsyncKeyState(int vKey);
-
     private IntPtr _hookId = IntPtr.Zero;
     private LowLevelKeyboardProc? _proc;
     private bool _isDisposed = false;
+    private volatile bool _isFnHeld = false;
 
     public bool IsInstalled => _hookId != IntPtr.Zero;
 
@@ -91,6 +82,8 @@ public class GlobalHotkeyHook : IDisposable
     /// When false, bare F1-F12 keys are standard F-keys.
     /// </summary>
     public bool IsFnLockActive { get; set; } = false;
+
+    public bool IsFnHeld => _isFnHeld;
 
     public event EventHandler<HotkeyEventArgs>? KeyIntercepted;
     public event Action? GimatePressed;
@@ -126,97 +119,127 @@ public class GlobalHotkeyHook : IDisposable
     {
         if (nCode >= 0)
         {
+            // ULTRA-FAST PATH: Read vkCode directly from memory (offset 0)
+            // If it's not one of our targeted keys, return immediately in ~2ns!
+            uint vkCode = (uint)Marshal.ReadInt32(lParam);
+
+            if (vkCode != VK_FN &&
+                vkCode != VK_F23 &&
+                vkCode != VK_F24 &&
+                vkCode != VK_F4 &&
+                vkCode != VK_F7 &&
+                vkCode != VK_F9 &&
+                vkCode != VK_F10 &&
+                vkCode != VK_SPACE &&
+                vkCode != VK_F21)
+            {
+                return CallNextHookEx(_hookId, nCode, wParam, lParam);
+            }
+
             int msg = wParam.ToInt32();
             bool isKeyDown = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
-            var kb = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(lParam);
+            uint flags = (uint)Marshal.ReadInt32(lParam, 8); // flags at offset 8
+            bool altDown = (flags & 0x20) != 0; // LLKHF_ALTDOWN
 
-            bool alt = (GetAsyncKeyState(0x12) & 0x8000) != 0;
-            bool ctrl = (GetAsyncKeyState(0x11) & 0x8000) != 0;
-            bool shift = (GetAsyncKeyState(0x10) & 0x8000) != 0;
-            bool win = (GetAsyncKeyState(0x5B) & 0x8000) != 0 || (GetAsyncKeyState(0x5C) & 0x8000) != 0;
-
-            var args = new HotkeyEventArgs(kb.vkCode, kb.scanCode, isKeyDown, alt, ctrl, shift, win);
-            KeyIntercepted?.Invoke(this, args);
-
-            if (isKeyDown)
+            // Handle Fn key press / release tracking (0x83)
+            if (vkCode == VK_FN)
             {
-                // 1. GiMATE key (emits VK_F23 or Win+Shift+F23)
-                if (kb.vkCode == VK_F23)
+                _isFnHeld = isKeyDown;
+                // Never swallow the Fn key itself - let Windows/EC proceed normally!
+                return CallNextHookEx(_hookId, nCode, wParam, lParam);
+            }
+
+            // Dedicated GiMATE key (0x86 / VK_F23)
+            if (vkCode == VK_F23)
+            {
+                if (isKeyDown)
                 {
                     Task.Run(() => GimatePressed?.Invoke());
-                    return (IntPtr)1; // Swallow key to suppress Windows Copilot
                 }
+                return (IntPtr)1; // Swallow key to suppress Microsoft Copilot
+            }
 
-                // 2. Touchpad Toggle key (emits VK_F24 with Ctrl+Win)
-                if (kb.vkCode == VK_F24)
+            // Touchpad hardware key (0x87 / VK_F24)
+            if (vkCode == VK_F24)
+            {
+                if (isKeyDown)
                 {
                     Task.Run(() => TouchpadTogglePressed?.Invoke());
-                    // Let it pass through so Precision Touchpad driver handles it too
                 }
+                return CallNextHookEx(_hookId, nCode, wParam, lParam);
+            }
 
-                // 3. Microphone Mute key (emits VK_F20 on some firmware)
-                if (kb.vkCode == VK_F20)
-                {
-                    Task.Run(() => MicMuteTogglePressed?.Invoke());
-                    return (IntPtr)1;
-                }
-
-                // 4. Airplane Mode key (emits VK_F21)
-                if (kb.vkCode == VK_F21)
+            // Dedicated Airplane key (0x84 / VK_F21)
+            if (vkCode == VK_F21)
+            {
+                if (isKeyDown)
                 {
                     Task.Run(() => AirplaneTogglePressed?.Invoke());
                 }
-
-                // 5. FnLock Synchronized Keys:
-                // When FnLock is ON (multimedia mode):
-                // - F4 is Microphone Mute
-                // - F7 is Performance Profile switch
-                // - F9 is Touchpad toggle
-                // - F10 is Airplane Mode
-                if (IsFnLockActive)
-                {
-                    if (kb.vkCode == VK_F4 && !alt && !ctrl)
-                    {
-                        Task.Run(() => MicMuteTogglePressed?.Invoke());
-                        return (IntPtr)1; // Swallow standard F4
-                    }
-
-                    if (kb.vkCode == VK_F7 && !alt && !ctrl && !shift && !win)
-                    {
-                        Task.Run(() => PerformanceTogglePressed?.Invoke());
-                        return (IntPtr)1; // Swallow standard F7
-                    }
-
-                    if (kb.vkCode == VK_F9 && !alt && !ctrl && !shift && !win)
-                    {
-                        Task.Run(() => TouchpadTogglePressed?.Invoke());
-                        return (IntPtr)1;
-                    }
-
-                    if (kb.vkCode == VK_F10 && !alt && !ctrl && !shift && !win)
-                    {
-                        Task.Run(() => AirplaneTogglePressed?.Invoke());
-                        return (IntPtr)1;
-                    }
-                }
-                else
-                {
-                    // When FnLock is OFF (Standard mode):
-                    // If the hardware emits special combinations or user presses Fn+key
-                    // If F7 is received with Fn indicator (or if passed as custom)
-                }
-
-                // 6. Fn + Space / Backlight toggle
-                // If Space is pressed with Fn or if custom scancode
-                if (kb.vkCode == VK_SPACE && (kb.flags & 0x20) != 0) // Or custom
-                {
-                    // Will be handled if detected
-                }
+                return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 
-            if (args.Handled)
+            // Fn + Space: Keyboard Backlight Cycle
+            if (vkCode == VK_SPACE && _isFnHeld)
             {
-                return (IntPtr)1;
+                if (isKeyDown)
+                {
+                    Task.Run(() => BacklightTogglePressed?.Invoke());
+                }
+                return (IntPtr)1; // Swallow Space so a whitespace character is not typed!
+            }
+
+            // Determine if the action should be triggered:
+            // Either Fn is physically held down (when FnLock is OFF),
+            // OR bare F-key is pressed (when FnLock is ON).
+            bool shouldTrigger = (_isFnHeld && !IsFnLockActive) || (!_isFnHeld && IsFnLockActive);
+
+            // F4: Microphone Mute Toggle (Do NOT swallow Alt+F4!)
+            if (vkCode == VK_F4 && !altDown && shouldTrigger)
+            {
+                if (isKeyDown)
+                {
+                    Task.Run(() => MicMuteTogglePressed?.Invoke());
+                }
+                return (IntPtr)1; // Swallow standard F4
+            }
+
+            // F7: Performance Profile Switch
+            if (vkCode == VK_F7 && !altDown && shouldTrigger)
+            {
+                if (isKeyDown)
+                {
+                    Task.Run(() => PerformanceTogglePressed?.Invoke());
+                }
+                return (IntPtr)1; // Swallow standard F7
+            }
+
+            // F9: Touchpad Toggle
+            if (vkCode == VK_F9 && !altDown && shouldTrigger)
+            {
+                if (isKeyDown)
+                {
+                    Task.Run(() => TouchpadTogglePressed?.Invoke());
+                }
+                return (IntPtr)1; // Swallow standard F9
+            }
+
+            // F10: Airplane Mode Toggle
+            if (vkCode == VK_F10 && !altDown && shouldTrigger)
+            {
+                if (isKeyDown)
+                {
+                    Task.Run(() => AirplaneTogglePressed?.Invoke());
+                }
+                return (IntPtr)1; // Swallow standard F10
+            }
+
+            // Sniffer diagnostic event invocation only if someone is listening
+            if (KeyIntercepted != null)
+            {
+                uint scanCode = (uint)Marshal.ReadInt32(lParam, 4);
+                var args = new HotkeyEventArgs(vkCode, scanCode, isKeyDown, altDown, false, false, false);
+                KeyIntercepted.Invoke(this, args);
             }
         }
 

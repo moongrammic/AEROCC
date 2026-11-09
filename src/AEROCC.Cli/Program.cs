@@ -844,7 +844,7 @@ static async Task TestHotKeySnifferAsync(GigabyteWmiClient client, AEROCC.Core.I
         {
             GlobalHotkeyHook.VK_F23 => "GiMATE / Copilot (VK_F23)",
             GlobalHotkeyHook.VK_F24 => "Touchpad Toggle (VK_F24)",
-            GlobalHotkeyHook.VK_F20 => "Mic Mute (VK_F20)",
+            GlobalHotkeyHook.VK_FN => "Fn Key (VK_FN 0x83)",
             GlobalHotkeyHook.VK_F21 => "Airplane Mode (VK_F21)",
             GlobalHotkeyHook.VK_F4 => "F4 (Microphone)",
             GlobalHotkeyHook.VK_F7 => "F7 (Performance)",
