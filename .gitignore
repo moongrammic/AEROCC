@@ -1,0 +1,11 @@
+## Build results
+[Bb]in/
+[Oo]bj/
+
+## Visual Studio cache
+.vs/
+*.user
+*.suo
+
+## Temporary research decompilation
+research/decompiled/
