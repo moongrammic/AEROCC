@@ -44,7 +44,7 @@ public class AeroccIpcServer
                 var adminSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
                 pipeSecurity.AddAccessRule(new PipeAccessRule(adminSid, PipeAccessRights.FullControl, AccessControlType.Allow));
 
-                using var serverStream = NamedPipeServerStreamAcl.Create(
+                var serverStream = NamedPipeServerStreamAcl.Create(
                     IpcConstants.PipeName,
                     PipeDirection.InOut,
                     NamedPipeServerStream.MaxAllowedServerInstances,
@@ -56,6 +56,7 @@ public class AeroccIpcServer
                 );
 
                 await serverStream.WaitForConnectionAsync(ct);
+                // Ownership of serverStream is passed to HandleClientAsync which disposes it
                 _ = HandleClientAsync(serverStream, ct);
             }
             catch (OperationCanceledException)
@@ -65,7 +66,7 @@ public class AeroccIpcServer
             catch (Exception ex)
             {
                 Console.WriteLine($"[IPC Server Error]: {ex.Message}");
-                await Task.Delay(1000, ct);
+                await Task.Delay(500, ct);
             }
         }
     }

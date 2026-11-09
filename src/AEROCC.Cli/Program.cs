@@ -74,23 +74,23 @@ while (true)
         switch (key)
         {
             case "1":
-                DisplayCurrentStatus(client);
+                await DisplayCurrentStatusAsync(client, ipcClient);
                 break;
 
             case "2":
-                TestBatteryLimit(client);
+                await TestBatteryLimitAsync(client, ipcClient);
                 break;
 
             case "3":
-                TestFanProfile(client);
+                await TestFanProfileAsync(client, ipcClient);
                 break;
 
             case "4":
-                TestWinKeyLock(client);
+                await TestWinKeyLockAsync(client, ipcClient);
                 break;
 
             case "5":
-                TestFnKeyLock(client);
+                await TestFnKeyLockAsync(client, ipcClient);
                 break;
 
             case "6":
@@ -147,10 +147,26 @@ static void PrintMenu()
     Console.WriteLine(" 0. Выход");
 }
 
-static void DisplayCurrentStatus(GigabyteWmiClient client)
+static async Task DisplayCurrentStatusAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.AeroccIpcClient ipc)
 {
     Console.WriteLine("\n[Опрос оборудования...]");
-    var status = client.GetHardwareStatus();
+    HardwareStatus? status = null;
+    var ipcResp = await ipc.GetStatusAsync();
+    if (ipcResp.Success && ipcResp.Status != null)
+    {
+        status = ipcResp.Status;
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("  (Канал: IPC от фоновой службы AEROCCService)");
+        Console.ResetColor();
+    }
+    else
+    {
+        status = client.GetHardwareStatus();
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine("  (Канал: Прямой доступ к WMI/HID)");
+        Console.ResetColor();
+    }
+
     Console.ForegroundColor = ConsoleColor.White;
     Console.WriteLine($"  - Температура CPU:          {status.CpuTemperature} °C");
     Console.WriteLine($"  - Вентилятор 1 (CPU):       {status.Fan1Rpm} RPM");
@@ -168,7 +184,7 @@ static string FormatBool(bool? val) => val switch
     null => "Н/Д"
 };
 
-static void TestBatteryLimit(GigabyteWmiClient client)
+static async Task TestBatteryLimitAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.AeroccIpcClient ipc)
 {
     Console.WriteLine("\nВыберите порог заряда аккумулятора:");
     Console.WriteLine(" 1. 60%");
@@ -191,19 +207,30 @@ static void TestBatteryLimit(GigabyteWmiClient client)
     }
 
     Console.WriteLine($"Установка порога заряда {target}%...");
-    bool ok = client.SetBatteryChargeLimit(target);
-    if (ok)
+    var ipcResp = await ipc.SetBatteryLimitAsync(target);
+    if (ipcResp.Success)
     {
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"[✓] Команда установки порога {target}% отправлена!");
+        Console.WriteLine($"[✓] Порог {target}% успешно установлен через фоновую службу!");
         Console.ResetColor();
-        Thread.Sleep(500);
-        int current = client.GetBatteryChargeLimit();
-        Console.WriteLine($"Текущий считанный порог из WMI: {current}%");
     }
+    else
+    {
+        bool ok = client.SetBatteryChargeLimit(target);
+        if (ok)
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"[✓] Порог {target}% установлен напрямую через WMI!");
+            Console.ResetColor();
+        }
+    }
+
+    Thread.Sleep(500);
+    int current = client.GetBatteryChargeLimit();
+    Console.WriteLine($"Текущий считанный порог из WMI: {current}%");
 }
 
-static void TestFanProfile(GigabyteWmiClient client)
+static async Task TestFanProfileAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.AeroccIpcClient ipc)
 {
     Console.WriteLine("\nВыберите профиль вентиляторов:");
     Console.WriteLine(" 1. Eco (Тихий / энергосберегающий)");
@@ -228,13 +255,23 @@ static void TestFanProfile(GigabyteWmiClient client)
     }
 
     Console.WriteLine($"Активация профиля {profile.Value}...");
-    client.SetFanProfile(profile.Value);
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"[✓] Профиль {profile.Value} успешно применен в BIOS EC!");
-    Console.ResetColor();
+    var ipcResp = await ipc.SetFanProfileAsync(profile.Value);
+    if (ipcResp.Success)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"[✓] Профиль {profile.Value} применен через фоновую службу!");
+        Console.ResetColor();
+    }
+    else
+    {
+        client.SetFanProfile(profile.Value);
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"[✓] Профиль {profile.Value} применен напрямую через WMI!");
+        Console.ResetColor();
+    }
 }
 
-static void TestWinKeyLock(GigabyteWmiClient client)
+static async Task TestWinKeyLockAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.AeroccIpcClient ipc)
 {
     bool? current = client.GetWinKeyLock();
     Console.WriteLine($"\n--- УПРАВЛЕНИЕ КЛАВИШЕЙ WIN (WinKey Lock) ---");
@@ -259,18 +296,20 @@ static void TestWinKeyLock(GigabyteWmiClient client)
     }
 
     Console.WriteLine($"Установка WinKey в: {(target.Value ? "Заблокировано" : "Разблокировано")}...");
-    bool ok = client.SetWinKeyLock(target.Value);
-    if (ok)
+    var ipcResp = await ipc.SetWinLockAsync(target.Value);
+    if (!ipcResp.Success)
     {
-        Thread.Sleep(300);
-        bool? verify = client.GetWinKeyLock();
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"[✓] Готово! Состояние после команды: {FormatBool(verify)}");
-        Console.ResetColor();
+        client.SetWinKeyLock(target.Value);
     }
+
+    Thread.Sleep(300);
+    bool? verify = client.GetWinKeyLock();
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine($"[✓] Готово! Состояние после команды: {FormatBool(verify)}");
+    Console.ResetColor();
 }
 
-static void TestFnKeyLock(GigabyteWmiClient client)
+static async Task TestFnKeyLockAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.AeroccIpcClient ipc)
 {
     bool? current = client.GetFnKeyLock();
     Console.WriteLine($"\n--- РЕЖИМ FN-КЛАВИШ (Fn Lock) ---");
@@ -295,15 +334,17 @@ static void TestFnKeyLock(GigabyteWmiClient client)
     }
 
     Console.WriteLine($"Установка Fn Lock в: {(target.Value ? "Включен (Lock ON)" : "Выключен (Lock OFF)")}...");
-    bool ok = client.SetFnKeyLock(target.Value);
-    if (ok)
+    var ipcResp = await ipc.SetFnLockAsync(target.Value);
+    if (!ipcResp.Success)
     {
-        Thread.Sleep(300);
-        bool? verify = client.GetFnKeyLock();
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"[✓] Готово! Состояние после команды: {FormatBool(verify)}");
-        Console.ResetColor();
+        client.SetFnKeyLock(target.Value);
     }
+
+    Thread.Sleep(300);
+    bool? verify = client.GetFnKeyLock();
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine($"[✓] Готово! Состояние после команды: {FormatBool(verify)}");
+    Console.ResetColor();
 }
 
 static void RunLiveMonitor(GigabyteWmiClient client)

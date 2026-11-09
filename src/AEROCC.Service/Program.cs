@@ -40,6 +40,17 @@ if (args.Length > 0)
 }
 
 // Build and run host (either as Windows Service or interactive Console)
+if (!AEROCC.Core.Wmi.GigabyteWmiClient.IsAdministrator())
+{
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.WriteLine("[!] Внимание: Консоль запущена БЕЗ прав Администратора.");
+    Console.WriteLine("    Прямой доступ к WMI требует прав Администратора или LocalSystem.");
+    Console.WriteLine("    Для работы в консоли запустите терминал от Администратора,");
+    Console.WriteLine("    либо установите службу в Windows: AEROCC.Service.exe --install");
+    Console.ResetColor();
+    Console.WriteLine();
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddWindowsService(options =>
 {
