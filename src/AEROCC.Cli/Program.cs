@@ -31,6 +31,22 @@ else
 }
 
 var client = new GigabyteWmiClient();
+var ipcClient = new AEROCC.Core.Ipc.AeroccIpcClient();
+
+// Check IPC connection to background service
+var serviceCheck = await ipcClient.SendCommandAsync(new AEROCC.Core.Ipc.IpcMessage { Command = AEROCC.Core.Ipc.IpcConstants.CmdPing }, timeoutMs: 500);
+if (serviceCheck.Success)
+{
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine("[✓] Подключено к фоновой службе AEROCCService по каналу IPC (Named Pipes)!");
+    Console.ResetColor();
+}
+else
+{
+    Console.ForegroundColor = ConsoleColor.DarkGray;
+    Console.WriteLine("[-] Фоновая служба AEROCCService не запущена (используется прямой доступ).");
+    Console.ResetColor();
+}
 
 // Initialize USB HID keyboard for Aero 16
 bool hidFound = client.Keyboard.Initialize();
@@ -89,6 +105,10 @@ while (true)
                 RunHidDiagnostics(client);
                 break;
 
+            case "9":
+                await TestIpcServiceAsync(ipcClient);
+                break;
+
             case "0":
             case "exit":
             case "q":
@@ -123,6 +143,7 @@ static void PrintMenu()
     Console.WriteLine(" 6. Запустить живой аппаратный монитор (обновление раз в секунду)");
     Console.WriteLine(" 7. Полная диагностика WMI (опрос всех доступных методов ядра)");
     Console.WriteLine(" 8. Диагностика USB HID клавиатуры");
+    Console.WriteLine(" 9. Тест IPC канала к службе AEROCCService (Named Pipes)");
     Console.WriteLine(" 0. Выход");
 }
 
@@ -351,6 +372,36 @@ static void RunHidDiagnostics(GigabyteWmiClient client)
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"  - HID FnLock:  {FormatBool(fnLock)}");
         Console.WriteLine($"  - HID WinLock: {FormatBool(winLock)}");
+        Console.ResetColor();
+    }
+}
+
+static async Task TestIpcServiceAsync(AEROCC.Core.Ipc.AeroccIpcClient ipc)
+{
+    Console.WriteLine("\n=== ТЕСТ IPC КАНАЛА (AEROCC.Service) ===");
+    Console.WriteLine("Отправка запроса GetStatus через Named Pipe...");
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    var resp = await ipc.GetStatusAsync();
+    sw.Stop();
+
+    if (resp.Success && resp.Status != null)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"[✓] Ответ получен за {sw.ElapsedMilliseconds} мс!");
+        Console.ResetColor();
+        Console.WriteLine($"  - CPU Temp:     {resp.Status.CpuTemperature} °C");
+        Console.WriteLine($"  - Fan 1 (CPU):  {resp.Status.Fan1Rpm} RPM");
+        Console.WriteLine($"  - Fan 2 (GPU):  {resp.Status.Fan2Rpm} RPM");
+        Console.WriteLine($"  - Battery Limit:{resp.Status.BatteryChargeLimit}%");
+        Console.WriteLine($"  - WinKey Lock:  {FormatBool(resp.Status.WinKeyLocked)}");
+        Console.WriteLine($"  - FnKey Lock:   {FormatBool(resp.Status.FnKeyLocked)}");
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"[x] Ошибка IPC: {resp.ErrorMessage ?? "Нет данных"}");
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("    Подсказка: запустите службу командой: AEROCC.Service.exe --install (или просто AEROCC.Service.exe в отдельном окне)");
         Console.ResetColor();
     }
 }
