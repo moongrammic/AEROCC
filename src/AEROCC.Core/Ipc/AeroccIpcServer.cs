@@ -3,16 +3,18 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using AEROCC.Core.Display;
 using AEROCC.Core.Models;
 using AEROCC.Core.Wmi;
 
 namespace AEROCC.Core.Ipc;
 
-public class AeroccIpcServer
+public class AeroccIpcServer : IDisposable
 {
     private readonly GigabyteWmiClient _wmiClient;
     private readonly Func<HardwareStatus> _getStatusFunc;
     private CancellationTokenSource? _cts;
+    private bool _isRunning;
 
     public AeroccIpcServer(GigabyteWmiClient wmiClient, Func<HardwareStatus> getStatusFunc)
     {
@@ -20,14 +22,18 @@ public class AeroccIpcServer
         _getStatusFunc = getStatusFunc;
     }
 
-    public void Start(CancellationToken ct = default)
+    public void Start()
     {
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (_isRunning) return;
+
+        _isRunning = true;
+        _cts = new CancellationTokenSource();
         _ = ListenLoopAsync(_cts.Token);
     }
 
     public void Stop()
     {
+        _isRunning = false;
         _cts?.Cancel();
     }
 
@@ -38,11 +44,10 @@ public class AeroccIpcServer
             try
             {
                 var pipeSecurity = new PipeSecurity();
-                var authenticatedUsersSid = new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null);
-                pipeSecurity.AddAccessRule(new PipeAccessRule(authenticatedUsersSid, PipeAccessRights.ReadWrite | PipeAccessRights.CreateNewInstance, AccessControlType.Allow));
-
-                var adminSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-                pipeSecurity.AddAccessRule(new PipeAccessRule(adminSid, PipeAccessRights.FullControl, AccessControlType.Allow));
+                pipeSecurity.AddAccessRule(new PipeAccessRule(
+                    new SecurityIdentifier(WellKnownSidType.WorldSid, null),
+                    PipeAccessRights.ReadWrite,
+                    AccessControlType.Allow));
 
                 var serverStream = NamedPipeServerStreamAcl.Create(
                     IpcConstants.PipeName,
@@ -50,14 +55,13 @@ public class AeroccIpcServer
                     NamedPipeServerStream.MaxAllowedServerInstances,
                     PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous,
-                    inBufferSize: 4096,
-                    outBufferSize: 4096,
-                    pipeSecurity
-                );
+                    0, 0,
+                    pipeSecurity);
 
                 await serverStream.WaitForConnectionAsync(ct);
-                // Ownership of serverStream is passed to HandleClientAsync which disposes it
-                _ = HandleClientAsync(serverStream, ct);
+
+                // Handle client in background task, transferring ownership of stream
+                _ = Task.Run(() => HandleClientAsync(serverStream, ct), ct);
             }
             catch (OperationCanceledException)
             {
@@ -65,8 +69,8 @@ public class AeroccIpcServer
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[IPC Server Error]: {ex.Message}");
-                await Task.Delay(500, ct);
+                Console.WriteLine($"[IPC Server Loop Error]: {ex.Message}");
+                await Task.Delay(100, ct);
             }
         }
     }
@@ -148,6 +152,54 @@ public class AeroccIpcServer
                     }
                     return new IpcResponse { Success = false, ErrorMessage = "Invalid FnLock value" };
 
+                case IpcConstants.CmdSetRefreshRate:
+                    if (int.TryParse(request.Payload, out int hz))
+                    {
+                        bool ok = DisplayManager.SetRefreshRate(hz);
+                        return new IpcResponse { Success = ok, Status = _getStatusFunc() };
+                    }
+                    return new IpcResponse { Success = false, ErrorMessage = "Invalid refresh rate value" };
+
+                case IpcConstants.CmdSetBacklightBrightness:
+                    if (byte.TryParse(request.Payload, out byte brightness))
+                    {
+                        bool ok = _wmiClient.Keyboard.SetBrightness(brightness);
+                        return new IpcResponse { Success = ok, Status = _getStatusFunc() };
+                    }
+                    return new IpcResponse { Success = false, ErrorMessage = "Invalid brightness value" };
+
+                case IpcConstants.CmdSetBacklightColor:
+                    if (byte.TryParse(request.Payload, out byte colorCode) && Enum.IsDefined(typeof(KeyboardColor), colorCode))
+                    {
+                        bool ok = _wmiClient.Keyboard.SetBacklight(KeyboardEffect.Static, 100, (KeyboardColor)colorCode);
+                        return new IpcResponse { Success = ok, Status = _getStatusFunc() };
+                    }
+                    return new IpcResponse { Success = false, ErrorMessage = "Invalid color value" };
+
+                case IpcConstants.CmdSetBacklightEffect:
+                    if (byte.TryParse(request.Payload, out byte effectCode) && Enum.IsDefined(typeof(KeyboardEffect), effectCode))
+                    {
+                        bool ok = _wmiClient.Keyboard.SetBacklight((KeyboardEffect)effectCode, 100);
+                        return new IpcResponse { Success = ok, Status = _getStatusFunc() };
+                    }
+                    return new IpcResponse { Success = false, ErrorMessage = "Invalid effect value" };
+
+                case IpcConstants.CmdSetCustomRgb:
+                    if (!string.IsNullOrEmpty(request.Payload))
+                    {
+                        var parts = request.Payload.Split(',');
+                        if (parts.Length >= 3 &&
+                            byte.TryParse(parts[0], out byte r) &&
+                            byte.TryParse(parts[1], out byte g) &&
+                            byte.TryParse(parts[2], out byte b))
+                        {
+                            byte br = parts.Length > 3 && byte.TryParse(parts[3], out byte customBr) ? customBr : (byte)100;
+                            bool ok = _wmiClient.Keyboard.SetCustomColor(r, g, b, br);
+                            return new IpcResponse { Success = ok, Status = _getStatusFunc() };
+                        }
+                    }
+                    return new IpcResponse { Success = false, ErrorMessage = "Invalid RGB payload format (expected 'R,G,B' or 'R,G,B,Brightness')" };
+
                 case IpcConstants.CmdPing:
                     return new IpcResponse { Success = true };
 
@@ -159,5 +211,12 @@ public class AeroccIpcServer
         {
             return new IpcResponse { Success = false, ErrorMessage = ex.Message };
         }
+    }
+
+    public void Dispose()
+    {
+        Stop();
+        _cts?.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

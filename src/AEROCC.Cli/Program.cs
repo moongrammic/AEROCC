@@ -1,4 +1,6 @@
 using System.Text;
+using AEROCC.Core.Display;
+using AEROCC.Core.Hid;
 using AEROCC.Core.Models;
 using AEROCC.Core.Wmi;
 
@@ -66,7 +68,7 @@ else
 while (true)
 {
     PrintMenu();
-    Console.Write("\nВыберите действие [0-8]: ");
+    Console.Write("\nВыберите действие [0-11]: ");
     var key = Console.ReadLine()?.Trim();
 
     try
@@ -109,6 +111,14 @@ while (true)
                 await TestIpcServiceAsync(ipcClient);
                 break;
 
+            case "10":
+                await TestDisplayRefreshRateAsync(ipcClient);
+                break;
+
+            case "11":
+                await TestKeyboardBacklightAsync(client, ipcClient);
+                break;
+
             case "0":
             case "exit":
             case "q":
@@ -135,7 +145,7 @@ static void PrintMenu()
     Console.ForegroundColor = ConsoleColor.DarkCyan;
     Console.WriteLine("\n------------------- МЕНЮ УПРАВЛЕНИЯ -------------------");
     Console.ResetColor();
-    Console.WriteLine(" 1. Считать текущее состояние (CPU Temp, Fan RPM, Батарея)");
+    Console.WriteLine(" 1. Считать текущее состояние (CPU Temp, Fan RPM, Батарея, Экран, Подсветка)");
     Console.WriteLine(" 2. Установить порог заряда батареи (60% / 80% / 100%)");
     Console.WriteLine(" 3. Переключить профиль вентиляторов (Eco / Normal / Game / Turbo)");
     Console.WriteLine(" 4. Управление блокировкой WinKey (Заблокировать / Разблокировать)");
@@ -144,6 +154,8 @@ static void PrintMenu()
     Console.WriteLine(" 7. Полная диагностика WMI (опрос всех доступных методов ядра)");
     Console.WriteLine(" 8. Диагностика USB HID клавиатуры");
     Console.WriteLine(" 9. Тест IPC канала к службе AEROCCService (Named Pipes)");
+    Console.WriteLine("10. Частота обновления экрана (60 Гц / 165 Гц)");
+    Console.WriteLine("11. Управление подсветкой клавиатуры (Яркость, Цвета, RGB, Эффекты)");
     Console.WriteLine(" 0. Выход");
 }
 
@@ -163,7 +175,7 @@ static async Task DisplayCurrentStatusAsync(GigabyteWmiClient client, AEROCC.Cor
     {
         status = client.GetHardwareStatus();
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine("  (Канал: Прямой доступ к WMI/HID)");
+        Console.WriteLine("  (Канал: Прямой доступ к WMI/HID/Display)");
         Console.ResetColor();
     }
 
@@ -174,6 +186,20 @@ static async Task DisplayCurrentStatusAsync(GigabyteWmiClient client, AEROCC.Cor
     Console.WriteLine($"  - Порог заряда аккумулятора:{status.BatteryChargeLimit}% (Policy: {status.BatteryPolicy})");
     Console.WriteLine($"  - WinKey заблокирована:     {FormatBool(status.WinKeyLocked)}");
     Console.WriteLine($"  - FnKey заблокирована:      {FormatBool(status.FnKeyLocked)}");
+
+    if (status.DisplayRefreshRate > 0)
+    {
+        string supported = status.AvailableRefreshRates.Count > 0
+            ? string.Join(", ", status.AvailableRefreshRates.Select(f => $"{f}Hz"))
+            : "Н/Д";
+        Console.WriteLine($"  - Экран (IPS):              {status.DisplayResolution} @ {status.DisplayRefreshRate} Гц [Доступно: {supported}]");
+    }
+
+    if (!string.IsNullOrEmpty(status.BacklightEffect))
+    {
+        Console.WriteLine($"  - Подсветка клавиатуры:     Яркость {status.BacklightBrightness}%, Цвет: {status.BacklightColor}, Режим: {status.BacklightEffect}");
+    }
+
     Console.ResetColor();
 }
 
@@ -347,6 +373,187 @@ static async Task TestFnKeyLockAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.A
     Console.ResetColor();
 }
 
+static async Task TestDisplayRefreshRateAsync(AEROCC.Core.Ipc.AeroccIpcClient ipc)
+{
+    Console.WriteLine("\n=== УПРАВЛЕНИЕ ЧАСТОТОЙ ОБНОВЛЕНИЯ ЭКРАНА ===");
+    var primary = DisplayManager.GetPrimaryDisplay();
+    if (primary == null)
+    {
+        Console.WriteLine("[x] Не удалось обнаружить основной дисплей.");
+        return;
+    }
+
+    Console.WriteLine($"  Дисплей:            {primary.DeviceName} ({primary.DeviceString})");
+    Console.WriteLine($"  Разрешение:         {primary.CurrentWidth}x{primary.CurrentHeight}");
+    Console.WriteLine($"  Текущая частота:    {primary.CurrentFrequency} Гц");
+    Console.WriteLine($"  Доступные частоты:  {string.Join(", ", primary.AvailableFrequencies)} Гц");
+
+    Console.WriteLine("\nВыберите режим:");
+    Console.WriteLine(" 1. 60 Гц (Энергосбережение / Автономность от батареи)");
+    Console.WriteLine(" 2. 165 Гц (Максимальная плавность / Gaming)");
+    Console.WriteLine(" 3. Ввести вручную");
+    Console.Write("Выбор: ");
+    var opt = Console.ReadLine()?.Trim();
+
+    int targetHz = opt switch
+    {
+        "1" => 60,
+        "2" => 165,
+        "3" => PromptHz(),
+        _ => 0
+    };
+
+    static int PromptHz()
+    {
+        Console.Write("Введите желаемую частоту (Гц): ");
+        return int.TryParse(Console.ReadLine(), out int val) ? val : 0;
+    }
+
+    if (targetHz <= 0)
+    {
+        Console.WriteLine("Отмена.");
+        return;
+    }
+
+    Console.WriteLine($"Переключение экрана на {targetHz} Гц...");
+
+    // Try via IPC first, then fallback to direct DisplayManager
+    var ipcResp = await ipc.SetRefreshRateAsync(targetHz);
+    bool ok = ipcResp.Success || DisplayManager.SetRefreshRate(targetHz);
+
+    if (ok)
+    {
+        Thread.Sleep(200);
+        var updated = DisplayManager.GetPrimaryDisplay();
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"[✓] Частота экрана успешно изменена! Текущая: {updated?.CurrentFrequency} Гц");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"[x] Не удалось переключить экран на {targetHz} Гц.");
+        Console.ResetColor();
+    }
+}
+
+static async Task TestKeyboardBacklightAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.AeroccIpcClient ipc)
+{
+    Console.WriteLine("\n=== УПРАВЛЕНИЕ ПОДСВЕТКОЙ КЛАВИАТУРЫ ===");
+    var status = client.Keyboard.GetBacklightStatus();
+    if (status != null)
+    {
+        Console.WriteLine($"  Текущий режим:  {status.Effect}");
+        Console.WriteLine($"  Яркость:        {status.Brightness}%");
+        Console.WriteLine($"  Цвет:           {status.Color}");
+        Console.WriteLine($"  Скорость:       {status.Speed}");
+    }
+    else
+    {
+        Console.WriteLine("  [-] Статус подсветки пока не считан.");
+    }
+
+    Console.WriteLine("\nВыберите действие:");
+    Console.WriteLine(" 1. Выключить подсветку (0%)");
+    Console.WriteLine(" 2. Яркость 25%");
+    Console.WriteLine(" 3. Яркость 50%");
+    Console.WriteLine(" 4. Яркость 75%");
+    Console.WriteLine(" 5. Яркость 100%");
+    Console.WriteLine(" 6. Статический цвет: Белый (White)");
+    Console.WriteLine(" 7. Статический цвет: Синий (Blue)");
+    Console.WriteLine(" 8. Статический цвет: Оранжевый (AERO Orange)");
+    Console.WriteLine(" 9. Статический цвет: Красный (Red)");
+    Console.WriteLine("10. Эффект: Дыхание (Breathing)");
+    Console.WriteLine("11. Эффект: Радуга / Неон (Neon)");
+    Console.WriteLine("12. Пользовательский цвет RGB (например, Бирюзовый / Фиолетовый)");
+    Console.Write("Выбор: ");
+    var opt = Console.ReadLine()?.Trim();
+
+    switch (opt)
+    {
+        case "1":
+            await SetBrightness(0);
+            break;
+        case "2":
+            await SetBrightness(25);
+            break;
+        case "3":
+            await SetBrightness(50);
+            break;
+        case "4":
+            await SetBrightness(75);
+            break;
+        case "5":
+            await SetBrightness(100);
+            break;
+        case "6":
+            await SetColor(KeyboardColor.White);
+            break;
+        case "7":
+            await SetColor(KeyboardColor.Blue);
+            break;
+        case "8":
+            await SetColor(KeyboardColor.Orange);
+            break;
+        case "9":
+            await SetColor(KeyboardColor.Red);
+            break;
+        case "10":
+            await SetEffect(KeyboardEffect.Breathing);
+            break;
+        case "11":
+            await SetEffect(KeyboardEffect.Neon);
+            break;
+        case "12":
+            Console.Write("Введите Red (0-255): ");
+            byte r = byte.TryParse(Console.ReadLine(), out var rv) ? rv : (byte)0;
+            Console.Write("Введите Green (0-255): ");
+            byte g = byte.TryParse(Console.ReadLine(), out var gv) ? gv : (byte)255;
+            Console.Write("Введите Blue (0-255): ");
+            byte b = byte.TryParse(Console.ReadLine(), out var bv) ? bv : (byte)255;
+            Console.WriteLine($"Установка RGB: ({r}, {g}, {b})...");
+            var rgbResp = await ipc.SetCustomRgbAsync(r, g, b);
+            if (!rgbResp.Success) client.Keyboard.SetCustomColor(r, g, b);
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("[✓] Пользовательский цвет RGB применен!");
+            Console.ResetColor();
+            break;
+        default:
+            Console.WriteLine("Отмена.");
+            break;
+    }
+
+    async Task SetBrightness(byte percent)
+    {
+        Console.WriteLine($"Установка яркости {percent}%...");
+        var resp = await ipc.SetBacklightBrightnessAsync(percent);
+        if (!resp.Success) client.Keyboard.SetBrightness(percent);
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"[✓] Яркость {percent}% установлена!");
+        Console.ResetColor();
+    }
+
+    async Task SetColor(KeyboardColor color)
+    {
+        Console.WriteLine($"Установка цвета {color}...");
+        var resp = await ipc.SetBacklightColorAsync(color);
+        if (!resp.Success) client.Keyboard.SetBacklight(KeyboardEffect.Static, 100, color);
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"[✓] Цвет {color} применен!");
+        Console.ResetColor();
+    }
+
+    async Task SetEffect(KeyboardEffect effect)
+    {
+        Console.WriteLine($"Активация эффекта {effect}...");
+        var resp = await ipc.SetBacklightEffectAsync(effect);
+        if (!resp.Success) client.Keyboard.SetBacklight(effect, 100);
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"[✓] Эффект {effect} включен!");
+        Console.ResetColor();
+    }
+}
+
 static void RunLiveMonitor(GigabyteWmiClient client)
 {
     Console.Clear();
@@ -410,9 +617,14 @@ static void RunHidDiagnostics(GigabyteWmiClient client)
     {
         var fnLock = client.Keyboard.GetFnLock();
         var winLock = client.Keyboard.GetWinLock();
+        var blStatus = client.Keyboard.GetBacklightStatus();
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"  - HID FnLock:  {FormatBool(fnLock)}");
-        Console.WriteLine($"  - HID WinLock: {FormatBool(winLock)}");
+        Console.WriteLine($"  - HID FnLock:   {FormatBool(fnLock)}");
+        Console.WriteLine($"  - HID WinLock:  {FormatBool(winLock)}");
+        if (blStatus != null)
+        {
+            Console.WriteLine($"  - HID Подсветка: {blStatus}");
+        }
         Console.ResetColor();
     }
 }
@@ -436,13 +648,21 @@ static async Task TestIpcServiceAsync(AEROCC.Core.Ipc.AeroccIpcClient ipc)
         Console.WriteLine($"  - Battery Limit:{resp.Status.BatteryChargeLimit}%");
         Console.WriteLine($"  - WinKey Lock:  {FormatBool(resp.Status.WinKeyLocked)}");
         Console.WriteLine($"  - FnKey Lock:   {FormatBool(resp.Status.FnKeyLocked)}");
+        if (resp.Status.DisplayRefreshRate > 0)
+        {
+            Console.WriteLine($"  - Display:      {resp.Status.DisplayResolution} @ {resp.Status.DisplayRefreshRate} Гц");
+        }
+        if (!string.IsNullOrEmpty(resp.Status.BacklightEffect))
+        {
+            Console.WriteLine($"  - Подсветка:    Яркость {resp.Status.BacklightBrightness}%, Режим: {resp.Status.BacklightEffect}");
+        }
     }
     else
     {
         Console.ForegroundColor = ConsoleColor.Red;
         Console.WriteLine($"[x] Ошибка IPC: {resp.ErrorMessage ?? "Нет данных"}");
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("    Подсказка: запустите службу командой: AEROCC.Service.exe --install (или просто AEROCC.Service.exe в отдельном окне)");
+        Console.WriteLine("    Подсказка: запустите службу в отдельном окне: AEROCC.Service.exe");
         Console.ResetColor();
     }
 }

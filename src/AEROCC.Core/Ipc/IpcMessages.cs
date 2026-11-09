@@ -14,6 +14,13 @@ public static class IpcConstants
     public const string CmdSetFnLock = "SetFnLock";
     public const string CmdSetApuPower = "SetApuPower";
     public const string CmdPing = "Ping";
+
+    // Display & Keyboard Lighting
+    public const string CmdSetRefreshRate = "SetRefreshRate";
+    public const string CmdSetBacklightBrightness = "SetBacklightBrightness";
+    public const string CmdSetBacklightEffect = "SetBacklightEffect";
+    public const string CmdSetBacklightColor = "SetBacklightColor";
+    public const string CmdSetCustomRgb = "SetCustomRgb";
 }
 
 public class IpcMessage

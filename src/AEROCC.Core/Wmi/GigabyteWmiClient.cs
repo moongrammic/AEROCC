@@ -1,5 +1,6 @@
 using System.Management;
 using System.Security.Principal;
+using AEROCC.Core.Display;
 using AEROCC.Core.Hid;
 using AEROCC.Core.Models;
 
@@ -50,8 +51,14 @@ public class GigabyteWmiClient
         if (raw == null) return 0;
 
         ushort val = Convert.ToUInt16(raw);
-        byte[] bytes = BitConverter.GetBytes(val);
-        return bytes[0] * 256 + bytes[1];
+        // Normal laptop fan speeds are in range 0 - 7000 RPM.
+        // If high and low bytes are inverted (> 10000 RPM), swap them:
+        if (val > 10000)
+        {
+            ushort swapped = (ushort)((val >> 8) | ((val & 0xFF) << 8));
+            if (swapped < 10000) return swapped;
+        }
+        return val;
     }
 
     public int GetBatteryChargeLimit()
@@ -108,6 +115,9 @@ public class GigabyteWmiClient
 
     public HardwareStatus GetHardwareStatus()
     {
+        var primaryDisp = DisplayManager.GetPrimaryDisplay();
+        var blStatus = _keyboard.GetBacklightStatus();
+
         return new HardwareStatus
         {
             CpuTemperature = SafeRead(GetCpuTemperature),
@@ -116,7 +126,13 @@ public class GigabyteWmiClient
             BatteryChargeLimit = SafeRead(GetBatteryChargeLimit),
             BatteryPolicy = SafeRead(GetBatteryChargePolicy),
             WinKeyLocked = GetWinKeyLock(),
-            FnKeyLocked = GetFnKeyLock()
+            FnKeyLocked = GetFnKeyLock(),
+            DisplayRefreshRate = primaryDisp?.CurrentFrequency ?? 0,
+            DisplayResolution = primaryDisp != null ? $"{primaryDisp.CurrentWidth}x{primaryDisp.CurrentHeight}" : null,
+            AvailableRefreshRates = primaryDisp?.AvailableFrequencies ?? new List<int>(),
+            BacklightBrightness = blStatus?.Brightness ?? 0,
+            BacklightEffect = blStatus?.Effect.ToString(),
+            BacklightColor = blStatus?.Color.ToString()
         };
     }
 

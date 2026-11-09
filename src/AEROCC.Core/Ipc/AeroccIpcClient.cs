@@ -53,4 +53,19 @@ public class AeroccIpcClient
 
     public Task<IpcResponse> SetFnLockAsync(bool locked, CancellationToken ct = default) =>
         SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetFnLock, Payload = locked.ToString() }, ct: ct);
+
+    public Task<IpcResponse> SetRefreshRateAsync(int hz, CancellationToken ct = default) =>
+        SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetRefreshRate, Payload = hz.ToString() }, ct: ct);
+
+    public Task<IpcResponse> SetBacklightBrightnessAsync(byte brightness, CancellationToken ct = default) =>
+        SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetBacklightBrightness, Payload = brightness.ToString() }, ct: ct);
+
+    public Task<IpcResponse> SetBacklightColorAsync(KeyboardColor color, CancellationToken ct = default) =>
+        SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetBacklightColor, Payload = ((byte)color).ToString() }, ct: ct);
+
+    public Task<IpcResponse> SetBacklightEffectAsync(KeyboardEffect effect, CancellationToken ct = default) =>
+        SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetBacklightEffect, Payload = ((byte)effect).ToString() }, ct: ct);
+
+    public Task<IpcResponse> SetCustomRgbAsync(byte r, byte g, byte b, byte brightness = 100, CancellationToken ct = default) =>
+        SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetCustomRgb, Payload = $"{r},{g},{b},{brightness}" }, ct: ct);
 }

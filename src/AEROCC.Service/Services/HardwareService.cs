@@ -30,9 +30,11 @@ public class HardwareService : IHostedService, IDisposable
         // Initial hardware check
         try
         {
+            _wmiClient.Keyboard.Initialize();
             _latestStatus = _wmiClient.GetHardwareStatus();
-            _logger.LogInformation("Initial hardware status: CPU={CpuTemp}°C, Fan1={Fan1}RPM, Fan2={Fan2}RPM, BatteryLimit={Limit}%",
-                _latestStatus.CpuTemperature, _latestStatus.Fan1Rpm, _latestStatus.Fan2Rpm, _latestStatus.BatteryChargeLimit);
+            _logger.LogInformation("Initial hardware status: CPU={CpuTemp}°C, Fan1={Fan1}RPM, Fan2={Fan2}RPM, BatteryLimit={Limit}%, Display={Disp}@{Hz}Hz",
+                _latestStatus.CpuTemperature, _latestStatus.Fan1Rpm, _latestStatus.Fan2Rpm, _latestStatus.BatteryChargeLimit,
+                _latestStatus.DisplayResolution ?? "Unknown", _latestStatus.DisplayRefreshRate);
         }
         catch (Exception ex)
         {

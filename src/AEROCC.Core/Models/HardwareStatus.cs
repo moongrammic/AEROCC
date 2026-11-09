@@ -9,6 +9,16 @@ public record HardwareStatus
     public int BatteryPolicy { get; init; }
     public bool? WinKeyLocked { get; init; }
     public bool? FnKeyLocked { get; init; }
+
+    // Display Information
+    public int DisplayRefreshRate { get; init; }
+    public string? DisplayResolution { get; init; }
+    public List<int> AvailableRefreshRates { get; init; } = new();
+
+    // Keyboard Backlight Information
+    public int BacklightBrightness { get; init; }
+    public string? BacklightEffect { get; init; }
+    public string? BacklightColor { get; init; }
 }
 
 public enum FanProfile

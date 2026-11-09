@@ -2,5 +2,6 @@
   <Folder Name="/src/">
     <Project Path="src/AEROCC.Cli/AEROCC.Cli.csproj" />
     <Project Path="src/AEROCC.Core/AEROCC.Core.csproj" />
+    <Project Path="src/AEROCC.Service/AEROCC.Service.csproj" />
   </Folder>
 </Solution>
