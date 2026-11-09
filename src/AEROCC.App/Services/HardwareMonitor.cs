@@ -15,6 +15,7 @@ public class HardwareMonitor : IDisposable
     private readonly GigabyteWmiClient _directClient = new();
     private CancellationTokenSource? _cts;
     private bool _isFirstPoll = true;
+    private int _probeCounter = 0;
 
     private bool? _prevWinLock;
     private bool? _prevFnLock;
@@ -22,7 +23,7 @@ public class HardwareMonitor : IDisposable
     private PowerLineStatus _prevPowerStatus = PowerLineStatus.Unknown;
 
     public HardwareStatus LatestStatus { get; private set; } = new();
-    public bool IsIpcConnected { get; private set; }
+    public bool IsIpcConnected => _ipcClient.IsServiceAvailable;
     public bool AutoRefreshRateEnabled { get; set; } = false;
 
     public event Action<HardwareStatus>? StatusUpdated;
@@ -30,6 +31,9 @@ public class HardwareMonitor : IDisposable
     public void Start()
     {
         if (_cts != null) return;
+
+        // Ensure direct keyboard HID is initialized
+        _directClient.Keyboard.Initialize();
 
         _cts = new CancellationTokenSource();
         _ = PollLoopAsync(_cts.Token);
@@ -43,17 +47,21 @@ public class HardwareMonitor : IDisposable
             {
                 HardwareStatus? status = null;
 
-                // 1. Try reading from background service over IPC
-                var ipcResp = await _ipcClient.GetStatusAsync(ct);
-                if (ipcResp.Success && ipcResp.Status != null)
+                // Only query IPC if service is active or probe every ~5 seconds
+                bool shouldProbeIpc = _ipcClient.IsServiceAvailable || (_probeCounter++ % 7 == 0);
+
+                if (shouldProbeIpc)
                 {
-                    status = ipcResp.Status;
-                    IsIpcConnected = true;
+                    var ipcResp = await _ipcClient.GetStatusAsync(ct);
+                    if (ipcResp.Success && ipcResp.Status != null)
+                    {
+                        status = ipcResp.Status;
+                    }
                 }
-                else
+
+                // Fallback to direct WMI/HID query if IPC is offline or failed
+                if (status == null)
                 {
-                    // 2. Fallback to direct WMI/HID query
-                    IsIpcConnected = false;
                     status = _directClient.GetHardwareStatus();
                 }
 
@@ -90,12 +98,10 @@ public class HardwareMonitor : IDisposable
                     {
                         if (currentPower == PowerLineStatus.Offline && status.DisplayRefreshRate != 60)
                         {
-                            // On battery -> 60Hz
                             await SetRefreshRateAsync(60);
                         }
                         else if (currentPower == PowerLineStatus.Online && status.DisplayRefreshRate != 165)
                         {
-                            // On AC -> 165Hz
                             await SetRefreshRateAsync(165);
                         }
                     }
@@ -127,111 +133,114 @@ public class HardwareMonitor : IDisposable
 
     public async Task<bool> SetBatteryLimitAsync(int percent)
     {
-        var resp = await _ipcClient.SetBatteryLimitAsync(percent);
-        if (resp.Success)
+        OsdService.Instance.ShowBatteryLimit(percent);
+
+        if (_ipcClient.IsServiceAvailable)
         {
-            OsdService.Instance.ShowBatteryLimit(percent);
-            return true;
+            var resp = await _ipcClient.SetBatteryLimitAsync(percent);
+            if (resp.Success) return true;
         }
 
-        bool ok = _directClient.SetBatteryChargeLimit(percent);
-        if (ok) OsdService.Instance.ShowBatteryLimit(percent);
-        return ok;
+        return _directClient.SetBatteryChargeLimit(percent);
     }
 
     public async Task<bool> SetFanProfileAsync(FanProfile profile)
     {
-        var resp = await _ipcClient.SetFanProfileAsync(profile);
-        if (resp.Success)
+        OsdService.Instance.ShowFanProfile(profile);
+
+        if (_ipcClient.IsServiceAvailable)
         {
-            OsdService.Instance.ShowFanProfile(profile);
-            return true;
+            var resp = await _ipcClient.SetFanProfileAsync(profile);
+            if (resp.Success) return true;
         }
 
-        bool ok = _directClient.SetFanProfile(profile);
-        if (ok) OsdService.Instance.ShowFanProfile(profile);
-        return ok;
+        return _directClient.SetFanProfile(profile);
     }
 
     public async Task<bool> SetWinLockAsync(bool locked)
     {
-        var resp = await _ipcClient.SetWinLockAsync(locked);
-        if (resp.Success)
+        _prevWinLock = locked;
+        OsdService.Instance.ShowWinLock(locked);
+
+        if (_ipcClient.IsServiceAvailable)
         {
-            _prevWinLock = locked;
-            OsdService.Instance.ShowWinLock(locked);
-            return true;
+            var resp = await _ipcClient.SetWinLockAsync(locked);
+            if (resp.Success) return true;
         }
 
-        bool ok = _directClient.SetWinKeyLock(locked);
-        if (ok)
-        {
-            _prevWinLock = locked;
-            OsdService.Instance.ShowWinLock(locked);
-        }
-        return ok;
+        return _directClient.SetWinKeyLock(locked);
     }
 
     public async Task<bool> SetFnLockAsync(bool locked)
     {
-        var resp = await _ipcClient.SetFnLockAsync(locked);
-        if (resp.Success)
+        _prevFnLock = locked;
+        OsdService.Instance.ShowFnLock(locked);
+
+        if (_ipcClient.IsServiceAvailable)
         {
-            _prevFnLock = locked;
-            OsdService.Instance.ShowFnLock(locked);
-            return true;
+            var resp = await _ipcClient.SetFnLockAsync(locked);
+            if (resp.Success) return true;
         }
 
-        bool ok = _directClient.SetFnKeyLock(locked);
-        if (ok)
-        {
-            _prevFnLock = locked;
-            OsdService.Instance.ShowFnLock(locked);
-        }
-        return ok;
+        return _directClient.SetFnKeyLock(locked);
     }
 
     public async Task<bool> SetRefreshRateAsync(int hz)
     {
-        var resp = await _ipcClient.SetRefreshRateAsync(hz);
-        if (resp.Success)
+        _prevRefreshRate = hz;
+        OsdService.Instance.ShowRefreshRate(hz);
+
+        if (_ipcClient.IsServiceAvailable)
         {
-            _prevRefreshRate = hz;
-            OsdService.Instance.ShowRefreshRate(hz);
-            return true;
+            var resp = await _ipcClient.SetRefreshRateAsync(hz);
+            if (resp.Success) return true;
         }
 
-        bool ok = DisplayManager.SetRefreshRate(hz);
-        if (ok)
-        {
-            _prevRefreshRate = hz;
-            OsdService.Instance.ShowRefreshRate(hz);
-        }
-        return ok;
+        return DisplayManager.SetRefreshRate(hz);
     }
 
     public async Task<bool> SetKeyboardBrightnessAsync(byte brightness)
     {
-        var resp = await _ipcClient.SetBacklightBrightnessAsync(brightness);
-        return resp.Success || _directClient.Keyboard.SetBrightness(brightness);
+        if (_ipcClient.IsServiceAvailable)
+        {
+            var resp = await _ipcClient.SetBacklightBrightnessAsync(brightness);
+            if (resp.Success) return true;
+        }
+
+        return _directClient.Keyboard.SetBrightness(brightness);
     }
 
     public async Task<bool> SetKeyboardColorAsync(KeyboardColor color)
     {
-        var resp = await _ipcClient.SetBacklightColorAsync(color);
-        return resp.Success || _directClient.Keyboard.SetBacklight(KeyboardEffect.Static, 100, color);
+        if (_ipcClient.IsServiceAvailable)
+        {
+            var resp = await _ipcClient.SetBacklightColorAsync(color);
+            if (resp.Success) return true;
+        }
+
+        return _directClient.Keyboard.SetBacklight(KeyboardEffect.Static, 100, color);
     }
 
     public async Task<bool> SetKeyboardEffectAsync(KeyboardEffect effect)
     {
-        var resp = await _ipcClient.SetBacklightEffectAsync(effect);
-        return resp.Success || _directClient.Keyboard.SetBacklight(effect, 100);
+        if (_ipcClient.IsServiceAvailable)
+        {
+            var resp = await _ipcClient.SetBacklightEffectAsync(effect);
+            if (resp.Success) return true;
+        }
+
+        return _directClient.Keyboard.SetBacklight(effect, 100);
     }
 
     public async Task<bool> SetCustomRgbAsync(byte r, byte g, byte b, byte brightness = 100)
     {
-        var resp = await _ipcClient.SetCustomRgbAsync(r, g, b, brightness);
-        return resp.Success || _directClient.Keyboard.SetCustomColor(r, g, b, brightness);
+        if (_ipcClient.IsServiceAvailable)
+        {
+            var resp = await _ipcClient.SetCustomRgbAsync(r, g, b, brightness);
+            if (resp.Success) return true;
+        }
+
+        return _directClient.Keyboard.SetCustomColor(r, g, b, brightness);
     }
 
     public void Dispose()

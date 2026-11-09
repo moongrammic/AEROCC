@@ -7,12 +7,16 @@ namespace AEROCC.Core.Ipc;
 
 public class AeroccIpcClient
 {
-    public async Task<IpcResponse> SendCommandAsync(IpcMessage request, int timeoutMs = 2000, CancellationToken ct = default)
+    public bool IsServiceAvailable { get; private set; }
+
+    public async Task<IpcResponse> SendCommandAsync(IpcMessage request, int timeoutMs = 120, CancellationToken ct = default)
     {
         try
         {
             using var pipe = new NamedPipeClientStream(".", IpcConstants.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
             await pipe.ConnectAsync(timeoutMs, ct);
+
+            IsServiceAvailable = true;
 
             var json = JsonSerializer.Serialize(request);
             var bytes = Encoding.UTF8.GetBytes(json + "\n");
@@ -31,16 +35,23 @@ public class AeroccIpcClient
         }
         catch (TimeoutException)
         {
+            IsServiceAvailable = false;
             return new IpcResponse { Success = false, ErrorMessage = "Таймаут подключения. Служба AEROCC не запущена." };
+        }
+        catch (IOException)
+        {
+            IsServiceAvailable = false;
+            return new IpcResponse { Success = false, ErrorMessage = "Канал связи разорван." };
         }
         catch (Exception ex)
         {
+            IsServiceAvailable = false;
             return new IpcResponse { Success = false, ErrorMessage = ex.Message };
         }
     }
 
     public Task<IpcResponse> GetStatusAsync(CancellationToken ct = default) =>
-        SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdGetStatus }, ct: ct);
+        SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdGetStatus }, timeoutMs: 120, ct: ct);
 
     public Task<IpcResponse> SetBatteryLimitAsync(int percent, CancellationToken ct = default) =>
         SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetBatteryLimit, Payload = percent.ToString() }, ct: ct);

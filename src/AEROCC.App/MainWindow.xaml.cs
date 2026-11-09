@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using AEROCC.App.Services;
 using AEROCC.Core.Display;
 using AEROCC.Core.Models;
@@ -262,13 +263,28 @@ public partial class MainWindow : Window
         _monitor.AutoRefreshRateEnabled = AutoRefreshCheck.IsChecked ?? false;
     }
 
+    private DispatcherTimer? _backlightDebounceTimer;
+    private byte _pendingBrightness;
+
     // Keyboard Backlight
-    private async void BacklightSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    private void BacklightSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (!_isLoaded || _isUpdatingUi) return;
         byte val = (byte)e.NewValue;
         if (BacklightPercentText != null) BacklightPercentText.Text = $"{val}%";
-        await SafeExecute(() => _monitor.SetKeyboardBrightnessAsync(val));
+
+        _pendingBrightness = val;
+        if (_backlightDebounceTimer == null)
+        {
+            _backlightDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(45) };
+            _backlightDebounceTimer.Tick += async (s, args) =>
+            {
+                _backlightDebounceTimer.Stop();
+                await SafeExecute(() => _monitor.SetKeyboardBrightnessAsync(_pendingBrightness));
+            };
+        }
+        _backlightDebounceTimer.Stop();
+        _backlightDebounceTimer.Start();
     }
 
     private async void ColorWhite_Click(object sender, RoutedEventArgs e) => await SafeExecute(() => _monitor.SetKeyboardColorAsync(KeyboardColor.White));

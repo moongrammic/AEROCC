@@ -8,6 +8,12 @@ public class GigabyteKeyboardClient
     private const int GigabyteVid = 0x0414;
     private HidDevice? _keyboardDevice;
 
+    private KeyboardEffect _lastEffect = KeyboardEffect.Static;
+    private KeyboardColor _lastColor = KeyboardColor.White;
+    private byte _lastSpeed = 5;
+    private byte _lastDirection = 1;
+    private byte _lastBrightness = 100;
+
     public bool IsConnected => _keyboardDevice != null;
 
     public bool Initialize()
@@ -123,6 +129,12 @@ public class GigabyteKeyboardClient
 
     public bool SetBacklight(KeyboardEffect effect, byte brightnessPercent, KeyboardColor color = KeyboardColor.White, byte speed = 5, byte direction = 1)
     {
+        _lastEffect = effect;
+        _lastBrightness = brightnessPercent;
+        _lastColor = color;
+        _lastSpeed = speed;
+        _lastDirection = direction;
+
         if (_keyboardDevice == null && !Initialize()) return false;
         if (_keyboardDevice == null || !_keyboardDevice.TryOpen(out var stream)) return false;
 
@@ -147,7 +159,7 @@ public class GigabyteKeyboardClient
                 report[8] = (byte)(255 - sum);
 
                 stream.SetFeature(report);
-                Thread.Sleep(50);
+                Thread.Sleep(20);
                 return true;
             }
             catch (Exception ex)
@@ -160,13 +172,8 @@ public class GigabyteKeyboardClient
 
     public bool SetBrightness(byte brightnessPercent)
     {
-        var current = GetBacklightStatus();
-        var effect = current?.Effect ?? KeyboardEffect.Static;
-        var color = current?.Color ?? KeyboardColor.White;
-        var speed = (byte)(current?.Speed ?? 5);
-        var dir = (byte)(current?.Direction ?? 1);
-
-        return SetBacklight(effect, brightnessPercent, color, speed, dir);
+        _lastBrightness = brightnessPercent;
+        return SetBacklight(_lastEffect, brightnessPercent, _lastColor, _lastSpeed, _lastDirection);
     }
 
     public bool SetCustomColor(byte r, byte g, byte b, byte brightnessPercent = 100)
