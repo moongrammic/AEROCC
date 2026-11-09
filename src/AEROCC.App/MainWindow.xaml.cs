@@ -79,6 +79,7 @@ public partial class MainWindow : Window
                 if (status.FnKeyLocked.HasValue && FnLockToggle != null)
                 {
                     FnLockToggle.IsChecked = status.FnKeyLocked.Value;
+                    UpdateFnLockUI(status.FnKeyLocked.Value);
                 }
 
                 // Update Backlight
@@ -307,7 +308,25 @@ public partial class MainWindow : Window
     {
         if (!_isLoaded || _isUpdatingUi || FnLockToggle == null) return;
         bool locked = FnLockToggle.IsChecked ?? false;
+        UpdateFnLockUI(locked);
         await SafeExecute(() => _monitor.SetFnLockAsync(locked));
+    }
+
+    private void UpdateFnLockUI(bool locked)
+    {
+        if (FnLockLabel != null)
+        {
+            FnLockLabel.Text = locked
+                ? "Режим F1–F12: Мультимедиа (Fn Lock)"
+                : "Режим F1–F12: Стандартные";
+        }
+        if (FnLockIcon != null)
+        {
+            FnLockIcon.Symbol = locked ? SymbolRegular.Speaker224 : SymbolRegular.Keyboard24;
+            FnLockIcon.Foreground = locked
+                ? new SolidColorBrush(Color.FromRgb(0, 210, 255))
+                : new SolidColorBrush(Color.FromArgb(180, 255, 255, 255));
+        }
     }
 
     private static async Task SafeExecute(Func<Task> action)

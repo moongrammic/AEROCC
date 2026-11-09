@@ -338,10 +338,10 @@ static async Task TestWinKeyLockAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.
 static async Task TestFnKeyLockAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.AeroccIpcClient ipc)
 {
     bool? current = client.GetFnKeyLock();
-    Console.WriteLine($"\n--- РЕЖИМ FN-КЛАВИШ (Fn Lock) ---");
-    Console.WriteLine($"Текущее состояние: {FormatBool(current)}");
-    Console.WriteLine(" 1. Заблокировать Fn (Fn Lock ON - F1-F12 работают как стандартные функциональные)");
-    Console.WriteLine(" 2. Разблокировать Fn (Fn Lock OFF - F1-F12 работают как мультимедиа/яркость)");
+    Console.WriteLine($"\n--- РЕЖИМ FN-КЛАВИШ (Fn Lock / Хоткей Fn + Esc) ---");
+    Console.WriteLine($"Текущее состояние: {(current == true ? "Мультимедиа (Fn Lock ON)" : "Стандартные F1-F12 (Fn Lock OFF)")}");
+    Console.WriteLine(" 1. Включить Fn Lock (Fn Lock ON - клавиши работают как мультимедиа: громкость, яркость)");
+    Console.WriteLine(" 2. Выключить Fn Lock (Fn Lock OFF - клавиши работают как стандартные F1-F12)");
     Console.WriteLine(" 3. Переключить (Toggle)");
     Console.Write("Выбор [1-3]: ");
     var opt = Console.ReadLine()?.Trim();

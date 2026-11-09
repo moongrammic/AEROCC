@@ -47,18 +47,18 @@ public class OsdService
         if (locked)
         {
             _window?.ShowNotification(
-                "Режим Fn Lock",
-                "Включен (F1–F12 как стандартные)",
-                SymbolRegular.Keyboard24,
+                "Режим клавиш (Fn + Esc)",
+                "Мультимедиа (Громкость, яркость)",
+                SymbolRegular.Speaker224,
                 Color.FromRgb(0, 210, 255)); // Cyan
         }
         else
         {
             _window?.ShowNotification(
-                "Режим Fn Lock",
-                "Выключен (F1–F12 как мультимедиа)",
-                SymbolRegular.Speaker224,
-                Color.FromRgb(220, 220, 230)); // White/Gray
+                "Режим клавиш (Fn + Esc)",
+                "Стандартные F1–F12 (Обычный режим)",
+                SymbolRegular.Keyboard24,
+                Color.FromRgb(46, 229, 157)); // Emerald Green
         }
     }
 

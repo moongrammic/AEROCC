@@ -276,8 +276,11 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <ui:SymbolIcon Symbol="Keyboard24" FontSize="14" Foreground="#33C2FF" Margin="0,0,6,0" />
-                                <TextBlock Text="Fn Lock (F1–F12 стандартные)" FontSize="12" Foreground="White" />
+                                <ui:SymbolIcon x:Name="FnLockIcon" Symbol="Keyboard24" FontSize="14" Foreground="#33C2FF" Margin="0,0,8,0" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock x:Name="FnLockLabel" Text="Режим F1–F12: Стандартные" FontSize="12" Foreground="White" />
+                                    <TextBlock Text="Переключение: Fn + Esc" FontSize="10" Foreground="#60FFFFFF" />
+                                </StackPanel>
                             </StackPanel>
                             <ui:ToggleSwitch Grid.Column="1" x:Name="FnLockToggle" Click="FnLockToggle_Click" />
                         </Grid>
