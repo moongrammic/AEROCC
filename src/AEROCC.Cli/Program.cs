@@ -1,8 +1,13 @@
+using System.Runtime.InteropServices;
 using System.Text;
+using AEROCC.Core.Audio;
 using AEROCC.Core.Display;
 using AEROCC.Core.Gpu;
 using AEROCC.Core.Hid;
+using AEROCC.Core.Hotkeys;
 using AEROCC.Core.Models;
+using AEROCC.Core.Radio;
+using AEROCC.Core.Touchpad;
 using AEROCC.Core.Wmi;
 
 Console.OutputEncoding = Encoding.UTF8;
@@ -124,6 +129,10 @@ while (true)
                 await TestGpuControlAsync(client, ipcClient);
                 break;
 
+            case "13":
+                await TestHotKeySnifferAsync(client, ipcClient);
+                break;
+
             case "0":
             case "exit":
             case "q":
@@ -162,6 +171,7 @@ static void PrintMenu()
     Console.WriteLine("10. Частота обновления экрана (60 Гц / 165 Гц)");
     Console.WriteLine("11. Управление подсветкой клавиатуры (Яркость, Цвета, RGB, Эффекты)");
     Console.WriteLine("12. Управление видеокартами (GPU / PowerGear: Dynamic / Performance / Eco)");
+    Console.WriteLine("13. Интерактивный монитор горячих клавиш и WMI (Sniffer: Fn+F7, GiMATE, Fn+Space, Fn+F4, Fn+F9, Fn+F10)");
     Console.WriteLine(" 0. Выход");
 }
 
@@ -783,4 +793,210 @@ static async Task TestGpuControlAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.
             Console.ResetColor();
         }
     }
+}
+
+static async Task TestHotKeySnifferAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.AeroccIpcClient ipc)
+{
+    Console.Clear();
+    Console.ForegroundColor = ConsoleColor.Cyan;
+    Console.WriteLine("================================================================================");
+    Console.WriteLine("    ИНТЕРАКТИВНЫЙ МОНИТОР ГОРЯЧИХ КЛАВИШ И СОБЫТИЙ WMI (Aero 16 1VH)");
+    Console.WriteLine("================================================================================");
+    Console.ResetColor();
+
+    bool fnLock = client.GetFnKeyLock() ?? false;
+    bool winLock = client.GetWinKeyLock() ?? false;
+    bool touchpad = TouchpadManager.Instance.IsTouchpadEnabled();
+    bool airplane = AirplaneModeManager.Instance.IsAirplaneModeActive();
+    bool micMute = MicrophoneManager.Instance.GetMute();
+
+    Console.WriteLine("--- ТЕКУЩИЕ СОСТОЯНИЯ ОБОРУДОВАНИЯ ---");
+    Console.WriteLine($"  [FnLock]:       {(fnLock ? "ВКЛЮЧЕН (Мультимедиа F1-F12)" : "ВЫКЛЮЧЕН (Стандартные F1-F12)")}");
+    Console.WriteLine($"  [WinLock]:      {(winLock ? "Заблокирована (Игровой режим)" : "Разблокирована")}");
+    Console.WriteLine($"  [Тачпад]:       {(touchpad ? "Включен" : "Заблокирован")}");
+    Console.WriteLine($"  [Режим полета]: {(airplane ? "Включен (Радиосвязь откл.)" : "Выключен")}");
+    Console.WriteLine($"  [Микрофон]:     {(micMute ? "ВЫКЛЮЧЕН (Muted)" : "ВКЛЮЧЕН (Active)")}");
+    Console.WriteLine();
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.WriteLine("ИНСТРУКЦИЯ: Нажимайте клавиши на ноутбуке:");
+    Console.WriteLine("  * Fn + F7 (или F7 при FnLock) - переключение производительности вентиляторов");
+    Console.WriteLine("  * Кнопка GiMATE (Copilot / F23) - открытие AEROCC");
+    Console.WriteLine("  * Fn + Space - переключение яркости подсветки");
+    Console.WriteLine("  * Fn + F9 - блокировка / разблокировка тачпада");
+    Console.WriteLine("  * Fn + F10 - режим полета");
+    Console.WriteLine("  * Fn + F4 - выключение микрофона");
+    Console.WriteLine("  * Fn + Esc - переключение FnLock");
+    Console.WriteLine();
+    Console.WriteLine("Для выхода в меню нажмите 'q' или 'Esc'...");
+    Console.ResetColor();
+    Console.WriteLine("--------------------------------------------------------------------------------");
+
+    var mgr = HotkeyManager.Instance;
+    mgr.IsFnLockActive = fnLock;
+
+    void OnKeyIntercepted(object? sender, HotkeyEventArgs e)
+    {
+        string dir = e.IsKeyDown ? "DOWN" : "UP  ";
+        string mods = $"{(e.AltPressed ? "Alt " : "")}{(e.CtrlPressed ? "Ctrl " : "")}{(e.ShiftPressed ? "Shift " : "")}{(e.WinPressed ? "Win " : "")}".Trim();
+        if (string.IsNullOrEmpty(mods)) mods = "None";
+
+        string keyDesc = e.VkCode switch
+        {
+            GlobalHotkeyHook.VK_F23 => "GiMATE / Copilot (VK_F23)",
+            GlobalHotkeyHook.VK_F24 => "Touchpad Toggle (VK_F24)",
+            GlobalHotkeyHook.VK_F20 => "Mic Mute (VK_F20)",
+            GlobalHotkeyHook.VK_F21 => "Airplane Mode (VK_F21)",
+            GlobalHotkeyHook.VK_F4 => "F4 (Microphone)",
+            GlobalHotkeyHook.VK_F7 => "F7 (Performance)",
+            GlobalHotkeyHook.VK_F9 => "F9 (Touchpad)",
+            GlobalHotkeyHook.VK_F10 => "F10 (Airplane)",
+            GlobalHotkeyHook.VK_SPACE => "Space (Backlight)",
+            _ => $"VK=0x{e.VkCode:X2}"
+        };
+
+        if (e.IsKeyDown)
+        {
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine($"[KEY {dir}] {keyDesc} | Vk=0x{e.VkCode:X2} ({e.VkCode}), Scan=0x{e.ScanCode:X2}, Mods=[{mods}]");
+            Console.ResetColor();
+        }
+    }
+
+    void OnWmiRaw(byte[] bytes)
+    {
+        Console.ForegroundColor = ConsoleColor.Magenta;
+        Console.WriteLine($"[WMI ACPI EVENT] Code: {bytes[0]} | Raw Bytes: {BitConverter.ToString(bytes)}");
+        Console.ResetColor();
+    }
+
+    void OnGimate()
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("  >> [ДЕЙСТВИЕ] Кнопка GiMATE обнаружена! (Запуск AEROCC)");
+        Console.ResetColor();
+    }
+
+    void OnPerf()
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("  >> [ДЕЙСТВИЕ] Переключение профиля производительности (Fn + F7)!");
+        Console.ResetColor();
+    }
+
+    void OnMic(bool isMuted)
+    {
+        Console.ForegroundColor = isMuted ? ConsoleColor.Red : ConsoleColor.Green;
+        Console.WriteLine($"  >> [ДЕЙСТВИЕ] Микрофон переключен: {(isMuted ? "ВЫКЛЮЧЕН" : "ВКЛЮЧЕН")} (Fn + F4)!");
+        Console.ResetColor();
+    }
+
+    void OnTouchpad(bool isEnabled)
+    {
+        Console.ForegroundColor = isEnabled ? ConsoleColor.Green : ConsoleColor.Yellow;
+        Console.WriteLine($"  >> [ДЕЙСТВИЕ] Тачпад переключен: {(isEnabled ? "ВКЛЮЧЕН" : "ЗАБЛОКИРОВАН")} (Fn + F9)!");
+        Console.ResetColor();
+    }
+
+    void OnAirplane(bool isActive)
+    {
+        Console.ForegroundColor = isActive ? ConsoleColor.Yellow : ConsoleColor.Green;
+        Console.WriteLine($"  >> [ДЕЙСТВИЕ] Режим полета переключен: {(isActive ? "ВКЛЮЧЕН" : "ВЫКЛЮЧЕН")} (Fn + F10)!");
+        Console.ResetColor();
+    }
+
+    void OnBacklight()
+    {
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine("  >> [ДЕЙСТВИЕ] Переключение яркости подсветки (Fn + Space)!");
+        Console.ResetColor();
+    }
+
+    void OnFnLockChanged(bool locked)
+    {
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine($"  >> [WMI СОБЫТИЕ 201] FnLock изменен: {(locked ? "ВКЛ (Мультимедиа)" : "ВЫКЛ (Стандартные F1-F12)")}");
+        Console.ResetColor();
+    }
+
+    void OnWinLockChanged(bool locked)
+    {
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine($"  >> [WMI СОБЫТИЕ 203] WinLock изменен: {(locked ? "ЗАБЛОКИРОВАНА" : "РАЗБЛОКИРОВАНА")}");
+        Console.ResetColor();
+    }
+
+    mgr.Hook.KeyIntercepted += OnKeyIntercepted;
+    mgr.WmiListener.RawEventArrived += OnWmiRaw;
+    mgr.WmiListener.FnLockChanged += OnFnLockChanged;
+    mgr.WmiListener.WinLockChanged += OnWinLockChanged;
+    mgr.GimateTriggered += OnGimate;
+    mgr.PerformanceCycleTriggered += OnPerf;
+    mgr.MicMuteTriggered += OnMic;
+    mgr.TouchpadTriggered += OnTouchpad;
+    mgr.AirplaneModeTriggered += OnAirplane;
+    mgr.BacklightCycleTriggered += OnBacklight;
+
+    mgr.Start();
+
+    try
+    {
+        while (true)
+        {
+            while (NativeMsgPump.PeekMessage(out var msg, IntPtr.Zero, 0, 0, 1) != 0)
+            {
+                NativeMsgPump.TranslateMessage(ref msg);
+                NativeMsgPump.DispatchMessage(ref msg);
+            }
+
+            if (Console.KeyAvailable)
+            {
+                var k = Console.ReadKey(intercept: true);
+                if (k.Key == ConsoleKey.Q || k.Key == ConsoleKey.Escape)
+                {
+                    break;
+                }
+            }
+
+            await Task.Delay(10);
+        }
+    }
+    finally
+    {
+        mgr.Hook.KeyIntercepted -= OnKeyIntercepted;
+        mgr.WmiListener.RawEventArrived -= OnWmiRaw;
+        mgr.WmiListener.FnLockChanged -= OnFnLockChanged;
+        mgr.WmiListener.WinLockChanged -= OnWinLockChanged;
+        mgr.GimateTriggered -= OnGimate;
+        mgr.PerformanceCycleTriggered -= OnPerf;
+        mgr.MicMuteTriggered -= OnMic;
+        mgr.TouchpadTriggered -= OnTouchpad;
+        mgr.AirplaneModeTriggered -= OnAirplane;
+        mgr.BacklightCycleTriggered -= OnBacklight;
+        mgr.Stop();
+        Console.WriteLine("\nСниффер остановлен.");
+    }
+}
+
+[StructLayout(LayoutKind.Sequential)]
+struct NativeMsg
+{
+    public IntPtr hwnd;
+    public uint message;
+    public UIntPtr wParam;
+    public IntPtr lParam;
+    public uint time;
+    public int pt_x;
+    public int pt_y;
+}
+
+static class NativeMsgPump
+{
+    [DllImport("user32.dll")]
+    public static extern int PeekMessage(out NativeMsg lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+
+    [DllImport("user32.dll")]
+    public static extern bool TranslateMessage([In] ref NativeMsg lpMsg);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr DispatchMessage([In] ref NativeMsg lpMsg);
 }

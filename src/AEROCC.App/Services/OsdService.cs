@@ -107,4 +107,77 @@ public class OsdService
 
         _window?.ShowNotification(title, desc, symbol, color);
     }
+
+    public void ShowTouchpad(bool enabled)
+    {
+        Initialize();
+        if (enabled)
+        {
+            _window?.ShowNotification(
+                "Сенсорная панель (Fn + F9)",
+                "Включена",
+                SymbolRegular.Cursor24,
+                Color.FromRgb(46, 229, 157)); // Emerald Green
+        }
+        else
+        {
+            _window?.ShowNotification(
+                "Сенсорная панель (Fn + F9)",
+                "Заблокирована",
+                SymbolRegular.LockClosed24,
+                Color.FromRgb(255, 170, 0)); // Amber
+        }
+    }
+
+    public void ShowAirplaneMode(bool enabled)
+    {
+        Initialize();
+        if (enabled)
+        {
+            _window?.ShowNotification(
+                "Режим полета (Fn + F10)",
+                "Включен (Беспроводные модули откл.)",
+                SymbolRegular.Airplane24,
+                Color.FromRgb(255, 170, 0)); // Amber
+        }
+        else
+        {
+            _window?.ShowNotification(
+                "Режим полета (Fn + F10)",
+                "Выключен (Связь активна)",
+                SymbolRegular.AirplaneTakeOff24,
+                Color.FromRgb(46, 229, 157)); // Emerald Green
+        }
+    }
+
+    public void ShowMicrophone(bool muted)
+    {
+        Initialize();
+        if (muted)
+        {
+            _window?.ShowNotification(
+                "Микрофон (Fn + F4)",
+                "Выключен (Звук отключен)",
+                SymbolRegular.MicOff24,
+                Color.FromRgb(255, 70, 70)); // Red
+        }
+        else
+        {
+            _window?.ShowNotification(
+                "Микрофон (Fn + F4)",
+                "Включен (Активен)",
+                SymbolRegular.Mic24,
+                Color.FromRgb(46, 229, 157)); // Emerald Green
+        }
+    }
+
+    public void ShowBacklight(int percent)
+    {
+        Initialize();
+        _window?.ShowNotification(
+            "Подсветка клавиатуры (Fn + Space)",
+            percent > 0 ? $"{percent}%" : "Выключена (0%)",
+            SymbolRegular.WeatherSunny24,
+            Color.FromRgb(0, 210, 255)); // Cyan
+    }
 }

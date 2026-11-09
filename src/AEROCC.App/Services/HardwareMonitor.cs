@@ -20,11 +20,14 @@ public class HardwareMonitor : IDisposable
     private bool? _prevWinLock;
     private bool? _prevFnLock;
     private int _prevRefreshRate;
+    private int _prevBacklight = -1;
     private PowerLineStatus _prevPowerStatus = PowerLineStatus.Unknown;
+    private FanProfile _currentFanProfile = FanProfile.Normal;
 
     public HardwareStatus LatestStatus { get; private set; } = new();
     public bool IsIpcConnected => _ipcClient.IsServiceAvailable;
     public bool AutoRefreshRateEnabled { get; set; } = false;
+    public FanProfile CurrentFanProfile => _currentFanProfile;
 
     public event Action<HardwareStatus>? StatusUpdated;
 
@@ -79,6 +82,7 @@ public class HardwareMonitor : IDisposable
 
                         if (status.FnKeyLocked.HasValue && status.FnKeyLocked != _prevFnLock)
                         {
+                            AEROCC.Core.Hotkeys.HotkeyManager.Instance.IsFnLockActive = status.FnKeyLocked.Value;
                             OsdService.Instance.ShowFnLock(status.FnKeyLocked.Value);
                         }
 
@@ -86,11 +90,21 @@ public class HardwareMonitor : IDisposable
                         {
                             OsdService.Instance.ShowRefreshRate(status.DisplayRefreshRate);
                         }
+
+                        if (status.BacklightBrightness >= 0 && _prevBacklight != -1 && status.BacklightBrightness != _prevBacklight)
+                        {
+                            OsdService.Instance.ShowBacklight(status.BacklightBrightness);
+                        }
+                    }
+                    else if (status.FnKeyLocked.HasValue)
+                    {
+                        AEROCC.Core.Hotkeys.HotkeyManager.Instance.IsFnLockActive = status.FnKeyLocked.Value;
                     }
 
                     _prevWinLock = status.WinKeyLocked;
                     _prevFnLock = status.FnKeyLocked;
                     _prevRefreshRate = status.DisplayRefreshRate;
+                    _prevBacklight = status.BacklightBrightness;
 
                     // Handle Auto-Refresh Rate on AC / Battery change
                     var currentPower = PowerManager.GetPowerInfo().LineStatus;
@@ -146,6 +160,7 @@ public class HardwareMonitor : IDisposable
 
     public async Task<bool> SetFanProfileAsync(FanProfile profile)
     {
+        _currentFanProfile = profile;
         OsdService.Instance.ShowFanProfile(profile);
 
         if (_ipcClient.IsServiceAvailable)
@@ -155,6 +170,22 @@ public class HardwareMonitor : IDisposable
         }
 
         return _directClient.SetFanProfile(profile);
+    }
+
+    public async Task<FanProfile> CycleFanProfileAsync()
+    {
+        var next = AEROCC.Core.Hotkeys.HotkeyManager.GetNextFanProfile(_currentFanProfile);
+        await SetFanProfileAsync(next);
+        return next;
+    }
+
+    public async Task<byte> CycleBacklightBrightnessAsync()
+    {
+        byte current = (byte)Math.Clamp(LatestStatus.BacklightBrightness, 0, 100);
+        byte next = AEROCC.Core.Hotkeys.HotkeyManager.GetNextBacklightBrightness(current);
+        await SetKeyboardBrightnessAsync(next);
+        OsdService.Instance.ShowBacklight(next);
+        return next;
     }
 
     public async Task<bool> SetWinLockAsync(bool locked)

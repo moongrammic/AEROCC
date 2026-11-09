@@ -5,6 +5,7 @@ using System.Windows.Threading;
 using AEROCC.App.Services;
 using AEROCC.Core.Display;
 using AEROCC.Core.Gpu;
+using AEROCC.Core.Hotkeys;
 using AEROCC.Core.Models;
 using Wpf.Ui.Controls;
 
@@ -13,6 +14,7 @@ namespace AEROCC.App;
 public partial class MainWindow : Window
 {
     private readonly HardwareMonitor _monitor = HardwareMonitor.Instance;
+    private readonly HotkeyManager _hotkeyManager = HotkeyManager.Instance;
     private readonly TrayIconService _trayIcon = new();
     private bool _isPinned = false;
     private bool _isUpdatingUi = false;
@@ -39,6 +41,17 @@ public partial class MainWindow : Window
         PositionNearTray();
         _isLoaded = true;
         _monitor.Start();
+
+        // Initialize Global Hotkeys and Hardware Events
+        _hotkeyManager.GimateTriggered += OnGimateTriggered;
+        _hotkeyManager.PerformanceCycleTriggered += OnPerformanceCycleTriggered;
+        _hotkeyManager.MicMuteTriggered += OnMicMuteTriggered;
+        _hotkeyManager.TouchpadTriggered += OnTouchpadTriggered;
+        _hotkeyManager.AirplaneModeTriggered += OnAirplaneModeTriggered;
+        _hotkeyManager.BacklightCycleTriggered += OnBacklightCycleTriggered;
+        _hotkeyManager.FnLockTriggered += OnFnLockTriggered;
+        _hotkeyManager.WinLockTriggered += OnWinLockTriggered;
+        _hotkeyManager.Start();
     }
 
     private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -286,9 +299,103 @@ public partial class MainWindow : Window
 
     private void QuitApplication()
     {
+        _hotkeyManager.Dispose();
         _trayIcon.Dispose();
         _monitor.Dispose();
         System.Windows.Application.Current.Shutdown();
+    }
+
+    private void OnGimateTriggered()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (IsVisible && IsActive)
+            {
+                Hide();
+            }
+            else
+            {
+                PositionNearTray();
+                Show();
+                Activate();
+                Focus();
+            }
+        });
+    }
+
+    private void OnPerformanceCycleTriggered()
+    {
+        Dispatcher.Invoke(async () =>
+        {
+            var next = await _monitor.CycleFanProfileAsync();
+            UpdateProfileButtonUI(next);
+        });
+    }
+
+    private void OnMicMuteTriggered(bool isMuted)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            OsdService.Instance.ShowMicrophone(isMuted);
+        });
+    }
+
+    private void OnTouchpadTriggered(bool isEnabled)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            OsdService.Instance.ShowTouchpad(isEnabled);
+        });
+    }
+
+    private void OnAirplaneModeTriggered(bool isActive)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            OsdService.Instance.ShowAirplaneMode(isActive);
+        });
+    }
+
+    private void OnBacklightCycleTriggered()
+    {
+        Dispatcher.Invoke(async () =>
+        {
+            byte next = await _monitor.CycleBacklightBrightnessAsync();
+            if (BacklightSlider != null) BacklightSlider.Value = next;
+            if (BacklightPercentText != null) BacklightPercentText.Text = $"{next}%";
+        });
+    }
+
+    private void OnFnLockTriggered(bool locked)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (FnLockToggle != null) FnLockToggle.IsChecked = locked;
+            UpdateFnLockUI(locked);
+            OsdService.Instance.ShowFnLock(locked);
+        });
+    }
+
+    private void OnWinLockTriggered(bool locked)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (WinLockToggle != null) WinLockToggle.IsChecked = locked;
+            OsdService.Instance.ShowWinLock(locked);
+        });
+    }
+
+    private void UpdateProfileButtonUI(FanProfile profile)
+    {
+        var btn = profile switch
+        {
+            FanProfile.Eco => BtnProfileEco,
+            FanProfile.Normal => BtnProfileNormal,
+            FanProfile.Game => BtnProfileGame,
+            FanProfile.Turbo => BtnProfileTurbo,
+            _ => null
+        };
+        SetActiveProfileButton(btn);
     }
 
     // Fan Profiles
