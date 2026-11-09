@@ -1,5 +1,6 @@
 using System.Text;
 using AEROCC.Core.Display;
+using AEROCC.Core.Gpu;
 using AEROCC.Core.Hid;
 using AEROCC.Core.Models;
 using AEROCC.Core.Wmi;
@@ -68,7 +69,7 @@ else
 while (true)
 {
     PrintMenu();
-    Console.Write("\nВыберите действие [0-11]: ");
+    Console.Write("\nВыберите действие [0-12]: ");
     var key = Console.ReadLine()?.Trim();
 
     try
@@ -119,6 +120,10 @@ while (true)
                 await TestKeyboardBacklightAsync(client, ipcClient);
                 break;
 
+            case "12":
+                await TestGpuControlAsync(client, ipcClient);
+                break;
+
             case "0":
             case "exit":
             case "q":
@@ -156,6 +161,7 @@ static void PrintMenu()
     Console.WriteLine(" 9. Тест IPC канала к службе AEROCCService (Named Pipes)");
     Console.WriteLine("10. Частота обновления экрана (60 Гц / 165 Гц)");
     Console.WriteLine("11. Управление подсветкой клавиатуры (Яркость, Цвета, RGB, Эффекты)");
+    Console.WriteLine("12. Управление видеокартами (GPU / PowerGear: Dynamic / Performance / Eco)");
     Console.WriteLine(" 0. Выход");
 }
 
@@ -198,6 +204,19 @@ static async Task DisplayCurrentStatusAsync(GigabyteWmiClient client, AEROCC.Cor
     if (!string.IsNullOrEmpty(status.BacklightEffect))
     {
         Console.WriteLine($"  - Подсветка клавиатуры:     Яркость {status.BacklightBrightness}%, Цвет: {status.BacklightColor}, Режим: {status.BacklightEffect}");
+    }
+
+    if (status.Gpu != null)
+    {
+        Console.WriteLine($"  - Видеокарта (dGPU):        {status.Gpu.Name}");
+        Console.WriteLine($"  - Состояние dGPU:           {status.Gpu.PowerState} (Режим питания: {status.Gpu.PowerMode})");
+        if (status.Gpu.PowerState == GpuPowerState.Active)
+        {
+            Console.WriteLine($"  - Температура GPU:          {status.Gpu.Temperature?.ToString() ?? "Н/Д"} °C");
+            Console.WriteLine($"  - Загрузка / Частота ядра:  {status.Gpu.CoreUsage?.ToString() ?? "Н/Д"}% @ {status.Gpu.CoreClockMhz?.ToString() ?? "Н/Д"} МГц");
+            Console.WriteLine($"  - Память VRAM:              {status.Gpu.MemoryUsedMb} / {status.Gpu.MemoryTotalMb} МБ");
+            Console.WriteLine($"  - Энергопотребление dGPU:   {status.Gpu.PowerWatts?.ToString("F1") ?? "Н/Д"} Вт");
+        }
     }
 
     Console.ResetColor();
@@ -566,9 +585,14 @@ static void RunLiveMonitor(GigabyteWmiClient client)
             int fan1 = client.GetFanRpm(1);
             int fan2 = client.GetFanRpm(2);
             int battLimit = client.GetBatteryChargeLimit();
+            var gpu = client.Gpu.GetTelemetry();
+
+            string gpuStr = gpu.PowerState == GpuPowerState.Active
+                ? $"GPU: {gpu.Temperature,2} °C ({gpu.CoreUsage,2}% | {gpu.PowerWatts,4:F1}W)"
+                : $"GPU: {gpu.PowerState}";
 
             Console.SetCursorPosition(0, 2);
-            Console.WriteLine($"[ {DateTime.Now:HH:mm:ss} ] CPU: {cpuTemp,2} °C | Fan 1: {fan1,4} RPM | Fan 2: {fan2,4} RPM | Battery Cap: {battLimit,3}%   ");
+            Console.WriteLine($"[ {DateTime.Now:HH:mm:ss} ] CPU: {cpuTemp,2} °C | {gpuStr,-25} | Fan 1: {fan1,4} RPM | Fan 2: {fan2,4} RPM | Bat: {battLimit,3}%   ");
         }
         catch (Exception ex)
         {
@@ -656,6 +680,14 @@ static async Task TestIpcServiceAsync(AEROCC.Core.Ipc.AeroccIpcClient ipc)
         {
             Console.WriteLine($"  - Подсветка:    Яркость {resp.Status.BacklightBrightness}%, Режим: {resp.Status.BacklightEffect}");
         }
+        if (resp.Status.Gpu != null)
+        {
+            Console.WriteLine($"  - GPU:          {resp.Status.Gpu.Name} [{resp.Status.Gpu.PowerState}]");
+            if (resp.Status.Gpu.PowerState == GpuPowerState.Active)
+            {
+                Console.WriteLine($"  - GPU Telemetry:{resp.Status.Gpu.Temperature} °C, {resp.Status.Gpu.CoreUsage}%, {resp.Status.Gpu.PowerWatts:F1}W, {resp.Status.Gpu.MemoryUsedMb}MB VRAM");
+            }
+        }
     }
     else
     {
@@ -664,5 +696,91 @@ static async Task TestIpcServiceAsync(AEROCC.Core.Ipc.AeroccIpcClient ipc)
         Console.ForegroundColor = ConsoleColor.Yellow;
         Console.WriteLine("    Подсказка: запустите службу в отдельном окне: AEROCC.Service.exe");
         Console.ResetColor();
+    }
+}
+
+static async Task TestGpuControlAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.AeroccIpcClient ipc)
+{
+    Console.WriteLine("\n=== УПРАВЛЕНИЕ ВИДЕОКАРТАМИ (GPU & POWERGEAR) ===");
+    var gpu = client.Gpu.GetTelemetry();
+    Console.WriteLine($"  Дискретная GPU:     {gpu.Name}");
+    Console.WriteLine($"  Встроенная GPU:     {gpu.IntegratedName}");
+    Console.WriteLine($"  Текущий статус:     {gpu.PowerState} (Режим: {gpu.PowerMode})");
+    if (gpu.PowerState == GpuPowerState.Active)
+    {
+        Console.WriteLine($"  Температура GPU:    {gpu.Temperature} °C");
+        Console.WriteLine($"  Загрузка ядра:      {gpu.CoreUsage}% @ {gpu.CoreClockMhz} МГц");
+        Console.WriteLine($"  Память VRAM:        {gpu.MemoryUsedMb} / {gpu.MemoryTotalMb} МБ");
+        Console.WriteLine($"  Потребление dGPU:   {gpu.PowerWatts:F1} Вт");
+    }
+
+    // Query ACPI PowerGear capability
+    int cap = client.GetAiPowerCtlCapability();
+    int dispMode = client.GetDisplayMode();
+    byte opStatus = client.GetNvPowerOperationStatus();
+    Console.WriteLine($"  [WMI ACPI] getAiPowerCtlCapability:        {cap} ({(cap == 1 ? "Поддерживается" : cap == 2 ? "Поддерживается с Boot" : "0 / Не поддерживается")})");
+    Console.WriteLine($"  [WMI ACPI] GetPEG2orSG2 (Display MUX):      {dispMode} ({(dispMode == 1 ? "Discrete" : dispMode == 2 ? "MsHybrid" : "Dynamic")})");
+    Console.WriteLine($"  [WMI ACPI] GetNvPowerConfigOperationStatus: 0x{opStatus:X2}");
+
+    Console.WriteLine("\nВыберите действие:");
+    Console.WriteLine(" 1. Режим Dynamic (Optimus - автопереключение по требованию [Рекомендуется])");
+    Console.WriteLine(" 2. Режим Performance (dGPU всегда включена)");
+    Console.WriteLine(" 3. Режим Eco (Отключить dGPU через ACPI для максимальной экономии батареи)");
+    Console.WriteLine(" 4. Тест WMI: Включить dGPU (SetNvPowerConfig Data=4)");
+    Console.WriteLine(" 5. Тест WMI: Выключить dGPU (SetNvPowerConfig Data=3)");
+    Console.WriteLine(" 6. Принудительный опрос PnP устройств (pnputil /scan-devices)");
+    Console.Write("Выбор: ");
+    var opt = Console.ReadLine()?.Trim();
+
+    switch (opt)
+    {
+        case "1":
+            await ApplyMode(GpuPowerMode.Dynamic);
+            break;
+        case "2":
+            await ApplyMode(GpuPowerMode.Performance);
+            break;
+        case "3":
+            await ApplyMode(GpuPowerMode.Eco);
+            break;
+        case "4":
+            Console.WriteLine("Отправка WMI SetNvPowerConfig(Data = 4)...");
+            bool r4 = client.SetNvPower(true);
+            Console.WriteLine($"Результат: {r4}. Запуск сканирования устройств...");
+            GpuManager.TriggerPnpRescan();
+            break;
+        case "5":
+            Console.WriteLine("Отправка WMI SetNvPowerConfig(Data = 3)...");
+            bool r3 = client.SetNvPower(false);
+            Console.WriteLine($"Результат: {r3}. Запуск сканирования устройств...");
+            GpuManager.TriggerPnpRescan();
+            break;
+        case "6":
+            Console.WriteLine("Запуск pnputil /scan-devices...");
+            GpuManager.TriggerPnpRescan();
+            Console.WriteLine("[✓] Запрос отправлен!");
+            break;
+        default:
+            Console.WriteLine("Отмена.");
+            break;
+    }
+
+    async Task ApplyMode(GpuPowerMode targetMode)
+    {
+        Console.WriteLine($"Применение режима {targetMode}...");
+        var ipcResp = await ipc.SetGpuPowerModeAsync(targetMode);
+        if (ipcResp.Success)
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine($"[✓] Режим {targetMode} успешно применен через службу!");
+            Console.ResetColor();
+        }
+        else
+        {
+            bool ok = client.SetGpuPowerMode(targetMode);
+            Console.ForegroundColor = ok ? ConsoleColor.Green : ConsoleColor.Red;
+            Console.WriteLine($"[{(ok ? "✓" : "x")}] Режим {targetMode} применен напрямую: {ok}");
+            Console.ResetColor();
+        }
     }
 }

@@ -120,55 +120,100 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- Telemetry Cards -->
-                <Grid Margin="0,0,0,10">
+                <!-- Telemetry Cards (CPU, GPU, Fans) -->
+                <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="6" />
+                        <ColumnDefinition Width="5" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="6" />
+                        <ColumnDefinition Width="5" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="5" />
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
                     <!-- CPU Temp -->
-                    <Border Grid.Column="0" Background="#14FFFFFF" CornerRadius="10" Padding="8,8">
+                    <Border Grid.Column="0" Background="#14FFFFFF" CornerRadius="10" Padding="6,8">
                         <StackPanel HorizontalAlignment="Center">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                <ui:SymbolIcon Symbol="Temperature24" FontSize="12" Foreground="#FF9933" Margin="0,0,3,0" />
-                                <TextBlock Text="CPU" FontSize="11" Foreground="#88FFFFFF" />
+                                <ui:SymbolIcon Symbol="Temperature24" FontSize="11" Foreground="#FF9933" Margin="0,0,3,0" />
+                                <TextBlock Text="CPU" FontSize="10" Foreground="#88FFFFFF" />
                             </StackPanel>
-                            <TextBlock x:Name="CpuTempText" Text="-- °C" FontSize="16" FontWeight="Bold" Foreground="White"
+                            <TextBlock x:Name="CpuTempText" Text="-- °C" FontSize="14" FontWeight="Bold" Foreground="White"
+                                       HorizontalAlignment="Center" Margin="0,2,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- GPU Temp -->
+                    <Border Grid.Column="2" Background="#14FFFFFF" CornerRadius="10" Padding="6,8">
+                        <StackPanel HorizontalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <ui:SymbolIcon Symbol="DeviceEq24" FontSize="11" Foreground="#00E676" Margin="0,0,3,0" />
+                                <TextBlock Text="GPU" FontSize="10" Foreground="#88FFFFFF" />
+                            </StackPanel>
+                            <TextBlock x:Name="GpuTempText" Text="-- °C" FontSize="14" FontWeight="Bold" Foreground="White"
                                        HorizontalAlignment="Center" Margin="0,2,0,0" />
                         </StackPanel>
                     </Border>
 
                     <!-- Fan 1 (CPU) -->
-                    <Border Grid.Column="2" Background="#14FFFFFF" CornerRadius="10" Padding="8,8">
+                    <Border Grid.Column="4" Background="#14FFFFFF" CornerRadius="10" Padding="6,8">
                         <StackPanel HorizontalAlignment="Center">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                <ui:SymbolIcon Symbol="WeatherBlowingSnow24" FontSize="12" Foreground="#33C2FF" Margin="0,0,3,0" />
-                                <TextBlock Text="Fan 1" FontSize="11" Foreground="#88FFFFFF" />
+                                <ui:SymbolIcon Symbol="WeatherBlowingSnow24" FontSize="11" Foreground="#33C2FF" Margin="0,0,3,0" />
+                                <TextBlock Text="Fan 1" FontSize="10" Foreground="#88FFFFFF" />
                             </StackPanel>
-                            <TextBlock x:Name="Fan1RpmText" Text="-- RPM" FontSize="15" FontWeight="Bold" Foreground="White"
+                            <TextBlock x:Name="Fan1RpmText" Text="-- RPM" FontSize="13" FontWeight="Bold" Foreground="White"
                                        HorizontalAlignment="Center" Margin="0,2,0,0" />
                         </StackPanel>
                     </Border>
 
                     <!-- Fan 2 (GPU) -->
-                    <Border Grid.Column="4" Background="#14FFFFFF" CornerRadius="10" Padding="8,8">
+                    <Border Grid.Column="6" Background="#14FFFFFF" CornerRadius="10" Padding="6,8">
                         <StackPanel HorizontalAlignment="Center">
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                <ui:SymbolIcon Symbol="WeatherBlowingSnow24" FontSize="12" Foreground="#33C2FF" Margin="0,0,3,0" />
-                                <TextBlock Text="Fan 2" FontSize="11" Foreground="#88FFFFFF" />
+                                <ui:SymbolIcon Symbol="WeatherBlowingSnow24" FontSize="11" Foreground="#33C2FF" Margin="0,0,3,0" />
+                                <TextBlock Text="Fan 2" FontSize="10" Foreground="#88FFFFFF" />
                             </StackPanel>
-                            <TextBlock x:Name="Fan2RpmText" Text="-- RPM" FontSize="15" FontWeight="Bold" Foreground="White"
+                            <TextBlock x:Name="Fan2RpmText" Text="-- RPM" FontSize="13" FontWeight="Bold" Foreground="White"
                                        HorizontalAlignment="Center" Margin="0,2,0,0" />
                         </StackPanel>
                     </Border>
                 </Grid>
 
-                <!-- Power info line -->
-                <TextBlock x:Name="PowerInfoText" Text="⚡ Питание: --" FontSize="11" Foreground="#70FFFFFF" Margin="2,0,0,10" />
+                <!-- Power & GPU Telemetry sub-line -->
+                <Grid Margin="2,0,2,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="PowerInfoText" Text="⚡ Питание: --" FontSize="11" Foreground="#70FFFFFF" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" x:Name="GpuDetailText" Text="RTX 5060: --" FontSize="11" Foreground="#70FFFFFF" VerticalAlignment="Center" />
+                </Grid>
+
+                <!-- Section: GPU Power Mode (PowerGear) -->
+                <Grid Margin="0,0,0,5">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="РЕЖИМ ВИДЕОКАРТЫ (POWERGEAR)" FontSize="11" FontWeight="Bold" Foreground="#80FFFFFF" VerticalAlignment="Center" />
+                    <Border Grid.Column="1" x:Name="GpuBadge" Background="#18FFFFFF" CornerRadius="4" Padding="6,1" VerticalAlignment="Center">
+                        <TextBlock x:Name="GpuBadgeText" Text="Optimus" FontSize="10" Foreground="#00E676" />
+                    </Border>
+                </Grid>
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="4" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="4" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" x:Name="BtnGpuDynamic" Content="Dynamic" Style="{StaticResource SegmentButtonStyle}" Click="BtnGpuDynamic_Click" ToolTip="NVIDIA Optimus: автопереключение между Radeon и RTX" />
+                    <Button Grid.Column="2" x:Name="BtnGpuEco" Content="Eco (Только iGPU)" Style="{StaticResource SegmentButtonStyle}" Click="BtnGpuEco_Click" ToolTip="Отключение питания RTX через ACPI для максимальной автономности" />
+                    <Button Grid.Column="4" x:Name="BtnGpuPerformance" Content="dGPU Вкл" Style="{StaticResource SegmentButtonStyle}" Click="BtnGpuPerformance_Click" ToolTip="Дискретная RTX всегда активна (низкие задержки)" />
+                </Grid>
 
                 <!-- Section: Performance / Fan Profiles -->
                 <TextBlock Text="РЕЖИМ ВЕНТИЛЯТОРОВ" FontSize="11" FontWeight="Bold" Foreground="#80FFFFFF" Margin="0,0,0,5" />

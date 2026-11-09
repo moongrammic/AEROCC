@@ -213,6 +213,14 @@ public class AeroccIpcServer : IDisposable
                     }
                     return new IpcResponse { Success = false, ErrorMessage = "Invalid RGB payload format (expected 'R,G,B' or 'R,G,B,Brightness')" };
 
+                case IpcConstants.CmdSetGpuPowerMode:
+                    if (int.TryParse(request.Payload, out int gpuMode) && Enum.IsDefined(typeof(AEROCC.Core.Gpu.GpuPowerMode), gpuMode))
+                    {
+                        bool ok = _wmiClient.SetGpuPowerMode((AEROCC.Core.Gpu.GpuPowerMode)gpuMode);
+                        return new IpcResponse { Success = ok, Status = _getStatusFunc() };
+                    }
+                    return new IpcResponse { Success = false, ErrorMessage = "Invalid GPU power mode value" };
+
                 case IpcConstants.CmdPing:
                     return new IpcResponse { Success = true };
 

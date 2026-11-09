@@ -21,6 +21,9 @@ public static class IpcConstants
     public const string CmdSetBacklightEffect = "SetBacklightEffect";
     public const string CmdSetBacklightColor = "SetBacklightColor";
     public const string CmdSetCustomRgb = "SetCustomRgb";
+
+    // GPU Control
+    public const string CmdSetGpuPowerMode = "SetGpuPowerMode";
 }
 
 public class IpcMessage

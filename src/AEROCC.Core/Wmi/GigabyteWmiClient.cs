@@ -1,6 +1,7 @@
 using System.Management;
 using System.Security.Principal;
 using AEROCC.Core.Display;
+using AEROCC.Core.Gpu;
 using AEROCC.Core.Hid;
 using AEROCC.Core.Models;
 
@@ -15,8 +16,10 @@ public class GigabyteWmiClient
     private const string DirectInstanceSet = @"GB_WMIACPI_Set.InstanceName='ACPI\PNP0C14\DCK_0'";
 
     private readonly GigabyteKeyboardClient _keyboard = new();
+    private readonly GpuManager _gpu = new();
 
     public GigabyteKeyboardClient Keyboard => _keyboard;
+    public GpuManager Gpu => _gpu;
 
     public static bool IsAdministrator()
     {
@@ -117,6 +120,7 @@ public class GigabyteWmiClient
     {
         var primaryDisp = DisplayManager.GetPrimaryDisplay();
         var blStatus = _keyboard.GetBacklightStatus();
+        var gpuTelemetry = SafeRead(_gpu.GetTelemetry);
 
         return new HardwareStatus
         {
@@ -132,7 +136,8 @@ public class GigabyteWmiClient
             AvailableRefreshRates = primaryDisp?.AvailableFrequencies ?? new List<int>(),
             BacklightBrightness = blStatus?.Brightness ?? 0,
             BacklightEffect = blStatus?.Effect.ToString(),
-            BacklightColor = blStatus?.Color.ToString()
+            BacklightColor = blStatus?.Color.ToString(),
+            Gpu = gpuTelemetry
         };
     }
 
@@ -253,6 +258,49 @@ public class GigabyteWmiClient
     public bool SetKeyboardBacklight(bool enabled) =>
         InvokeSetMethod("SetKeyBoardBackLight", ("Data", (ushort)(enabled ? 1 : 0)));
 
+    public int GetAiPowerCtlCapability()
+    {
+        var raw = InvokeGetMethod("getAiPowerCtlCapability");
+        return raw != null ? Convert.ToInt32(raw) : 0;
+    }
+
+    public int GetDisplayMode()
+    {
+        var raw = InvokeGetMethod("GetPEG2orSG2");
+        return raw != null ? Convert.ToInt32(raw) : 0;
+    }
+
+    public bool SetDisplayMode(byte mode) =>
+        InvokeSetMethod("SetPEG2orSG2", ("Data", mode));
+
+    public byte GetNvPowerOperationStatus()
+    {
+        var raw = InvokeGetMethod("GetNvPowerConfigOperationStatus");
+        return raw != null ? Convert.ToByte(raw) : (byte)0;
+    }
+
+    public bool SetNvPower(bool turnOn) =>
+        InvokeSetMethod("SetNvPowerConfig", ("Data", (ushort)(turnOn ? 4 : 3)));
+
+    public bool SetGpuPowerMode(GpuPowerMode mode)
+    {
+        _gpu.SavePersistedMode(mode);
+        bool success;
+
+        if (mode == GpuPowerMode.Eco)
+        {
+            success = SetNvPower(false);
+            GpuManager.TriggerPnpRescan();
+        }
+        else
+        {
+            success = SetNvPower(true);
+            GpuManager.TriggerPnpRescan();
+        }
+
+        return success;
+    }
+
     public object? InvokeGetMethod(string methodName)
     {
         try
@@ -351,7 +399,8 @@ public class GigabyteWmiClient
             "GetCPUFanDuty", "GetGPUFanDuty", "GetAutoFanStatus", "GetFixedFanStatus", "GetFixedFanSpeed",
             "GetChargeStop", "GetChargePolicy", "GetBatteryHealth", "GetBatteryNCM",
             "getWinKeyLockStatus", "getFnKeyLockStatus", "getTouchPadStatus",
-            "getPostAnimate", "getHddLightDisplay", "getBatteryLightDisplay", "getPwrLightDisplay"
+            "getPostAnimate", "getHddLightDisplay", "getBatteryLightDisplay", "getPwrLightDisplay",
+            "getAiPowerCtlCapability", "GetPEG2orSG2", "getSecondDisplay", "getPdChargeInStatus", "GetNvPowerConfigOperationStatus"
         ];
 
         var results = new Dictionary<string, object?>();

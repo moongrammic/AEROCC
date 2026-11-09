@@ -93,4 +93,18 @@ public class OsdService
             SymbolRegular.BatteryCharge24,
             Color.FromRgb(46, 229, 157));
     }
+
+    public void ShowGpuMode(AEROCC.Core.Gpu.GpuPowerMode mode)
+    {
+        Initialize();
+        var (title, desc, color, symbol) = mode switch
+        {
+            AEROCC.Core.Gpu.GpuPowerMode.Eco => ("Режим видеокарты", "Eco (Только iGPU / Макс. батарея)", Color.FromRgb(46, 229, 157), SymbolRegular.LeafOne24),
+            AEROCC.Core.Gpu.GpuPowerMode.Dynamic => ("Режим видеокарты", "Dynamic (Optimus / Автопереключение)", Color.FromRgb(0, 180, 255), SymbolRegular.ArrowSync24),
+            AEROCC.Core.Gpu.GpuPowerMode.Performance => ("Режим видеокарты", "Performance (dGPU всегда активна)", Color.FromRgb(255, 120, 0), SymbolRegular.Flash24),
+            _ => ("Режим видеокарты", mode.ToString(), Color.FromRgb(200, 200, 200), SymbolRegular.DeviceEq24)
+        };
+
+        _window?.ShowNotification(title, desc, symbol, color);
+    }
 }

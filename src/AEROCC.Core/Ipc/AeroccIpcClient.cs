@@ -79,4 +79,7 @@ public class AeroccIpcClient
 
     public Task<IpcResponse> SetCustomRgbAsync(byte r, byte g, byte b, byte brightness = 100, CancellationToken ct = default) =>
         SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetCustomRgb, Payload = $"{r},{g},{b},{brightness}" }, ct: ct);
+
+    public Task<IpcResponse> SetGpuPowerModeAsync(AEROCC.Core.Gpu.GpuPowerMode mode, CancellationToken ct = default) =>
+        SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetGpuPowerMode, Payload = ((int)mode).ToString() }, ct: ct);
 }

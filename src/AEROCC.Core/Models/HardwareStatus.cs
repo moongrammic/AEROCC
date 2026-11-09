@@ -1,3 +1,5 @@
+using AEROCC.Core.Gpu;
+
 namespace AEROCC.Core.Models;
 
 public record HardwareStatus
@@ -19,6 +21,9 @@ public record HardwareStatus
     public int BacklightBrightness { get; init; }
     public string? BacklightEffect { get; init; }
     public string? BacklightColor { get; init; }
+
+    // GPU Information
+    public GpuTelemetry? Gpu { get; init; }
 }
 
 public enum FanProfile

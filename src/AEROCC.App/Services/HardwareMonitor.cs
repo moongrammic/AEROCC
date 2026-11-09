@@ -243,6 +243,19 @@ public class HardwareMonitor : IDisposable
         return _directClient.Keyboard.SetCustomColor(r, g, b, brightness);
     }
 
+    public async Task<bool> SetGpuPowerModeAsync(AEROCC.Core.Gpu.GpuPowerMode mode)
+    {
+        OsdService.Instance.ShowGpuMode(mode);
+
+        if (_ipcClient.IsServiceAvailable)
+        {
+            var resp = await _ipcClient.SetGpuPowerModeAsync(mode);
+            if (resp.Success) return true;
+        }
+
+        return _directClient.SetGpuPowerMode(mode);
+    }
+
     public void Dispose()
     {
         _cts?.Cancel();

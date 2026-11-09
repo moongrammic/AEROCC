@@ -4,6 +4,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using AEROCC.App.Services;
 using AEROCC.Core.Display;
+using AEROCC.Core.Gpu;
 using AEROCC.Core.Models;
 using Wpf.Ui.Controls;
 
@@ -58,6 +59,67 @@ public partial class MainWindow : Window
                 if (CpuTempText != null) CpuTempText.Text = $"{status.CpuTemperature} °C";
                 if (Fan1RpmText != null) Fan1RpmText.Text = $"{status.Fan1Rpm} RPM";
                 if (Fan2RpmText != null) Fan2RpmText.Text = $"{status.Fan2Rpm} RPM";
+
+                // GPU Telemetry
+                if (status.Gpu != null)
+                {
+                    if (status.Gpu.PowerState == GpuPowerState.Active)
+                    {
+                        if (GpuTempText != null)
+                        {
+                            GpuTempText.Text = $"{status.Gpu.Temperature ?? 0} °C";
+                            GpuTempText.Foreground = new SolidColorBrush(Color.FromRgb(0, 230, 118));
+                        }
+                        if (GpuDetailText != null)
+                        {
+                            GpuDetailText.Text = $"{status.Gpu.CoreUsage ?? 0}% • {status.Gpu.PowerWatts?.ToString("F1") ?? "0"}W • {status.Gpu.MemoryUsedMb}MB";
+                        }
+                        if (GpuBadgeText != null)
+                        {
+                            GpuBadgeText.Text = "Активна";
+                            GpuBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0, 230, 118));
+                        }
+                    }
+                    else if (status.Gpu.PowerState == GpuPowerState.Sleeping)
+                    {
+                        if (GpuTempText != null)
+                        {
+                            GpuTempText.Text = "Спит";
+                            GpuTempText.Foreground = new SolidColorBrush(Color.FromArgb(180, 255, 255, 255));
+                        }
+                        if (GpuDetailText != null)
+                        {
+                            GpuDetailText.Text = "Optimus Спящий (D3)";
+                        }
+                        if (GpuBadgeText != null)
+                        {
+                            GpuBadgeText.Text = "D3cold Спит";
+                            GpuBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(0, 180, 255));
+                        }
+                    }
+                    else if (status.Gpu.PowerState == GpuPowerState.EcoDisabled)
+                    {
+                        if (GpuTempText != null)
+                        {
+                            GpuTempText.Text = "Откл";
+                            GpuTempText.Foreground = new SolidColorBrush(Color.FromArgb(120, 255, 255, 255));
+                        }
+                        if (GpuDetailText != null)
+                        {
+                            GpuDetailText.Text = "Только iGPU (Eco)";
+                        }
+                        if (GpuBadgeText != null)
+                        {
+                            GpuBadgeText.Text = "Eco Отключена";
+                            GpuBadgeText.Foreground = new SolidColorBrush(Color.FromRgb(255, 170, 0));
+                        }
+                    }
+
+                    // Update GPU Mode buttons
+                    if (BtnGpuDynamic != null) BtnGpuDynamic.Tag = status.Gpu.PowerMode == GpuPowerMode.Dynamic ? "Active" : null;
+                    if (BtnGpuEco != null) BtnGpuEco.Tag = status.Gpu.PowerMode == GpuPowerMode.Eco ? "Active" : null;
+                    if (BtnGpuPerformance != null) BtnGpuPerformance.Tag = status.Gpu.PowerMode == GpuPowerMode.Performance ? "Active" : null;
+                }
 
                 var power = PowerManager.GetPowerInfo();
                 if (PowerInfoText != null) PowerInfoText.Text = $"⚡ {power} • Лимит: {status.BatteryChargeLimit}%";
@@ -177,6 +239,20 @@ public partial class MainWindow : Window
 
             menu.Items.Add(new Separator());
 
+            var gpuDynamic = new System.Windows.Controls.MenuItem { Header = "GPU: Dynamic (Optimus)" };
+            gpuDynamic.Click += async (s, e) => await SafeExecute(() => _monitor.SetGpuPowerModeAsync(GpuPowerMode.Dynamic));
+            menu.Items.Add(gpuDynamic);
+
+            var gpuEco = new System.Windows.Controls.MenuItem { Header = "GPU: Eco (Только iGPU)" };
+            gpuEco.Click += async (s, e) => await SafeExecute(() => _monitor.SetGpuPowerModeAsync(GpuPowerMode.Eco));
+            menu.Items.Add(gpuEco);
+
+            var gpuPerf = new System.Windows.Controls.MenuItem { Header = "GPU: dGPU Всегда активна" };
+            gpuPerf.Click += async (s, e) => await SafeExecute(() => _monitor.SetGpuPowerModeAsync(GpuPowerMode.Performance));
+            menu.Items.Add(gpuPerf);
+
+            menu.Items.Add(new Separator());
+
             var exitItem = new System.Windows.Controls.MenuItem { Header = "Выход" };
             exitItem.Click += (s, e) => QuitApplication();
             menu.Items.Add(exitItem);
@@ -253,6 +329,33 @@ public partial class MainWindow : Window
     private async void BtnBattery60_Click(object sender, RoutedEventArgs e) => await SafeExecute(() => _monitor.SetBatteryLimitAsync(60));
     private async void BtnBattery80_Click(object sender, RoutedEventArgs e) => await SafeExecute(() => _monitor.SetBatteryLimitAsync(80));
     private async void BtnBattery100_Click(object sender, RoutedEventArgs e) => await SafeExecute(() => _monitor.SetBatteryLimitAsync(100));
+
+    // GPU PowerGear
+    private async void BtnGpuDynamic_Click(object sender, RoutedEventArgs e)
+    {
+        SetGpuButtonActive(BtnGpuDynamic);
+        await SafeExecute(() => _monitor.SetGpuPowerModeAsync(GpuPowerMode.Dynamic));
+    }
+
+    private async void BtnGpuEco_Click(object sender, RoutedEventArgs e)
+    {
+        SetGpuButtonActive(BtnGpuEco);
+        await SafeExecute(() => _monitor.SetGpuPowerModeAsync(GpuPowerMode.Eco));
+    }
+
+    private async void BtnGpuPerformance_Click(object sender, RoutedEventArgs e)
+    {
+        SetGpuButtonActive(BtnGpuPerformance);
+        await SafeExecute(() => _monitor.SetGpuPowerModeAsync(GpuPowerMode.Performance));
+    }
+
+    private void SetGpuButtonActive(System.Windows.Controls.Button? activeBtn)
+    {
+        if (BtnGpuDynamic != null) BtnGpuDynamic.Tag = null;
+        if (BtnGpuEco != null) BtnGpuEco.Tag = null;
+        if (BtnGpuPerformance != null) BtnGpuPerformance.Tag = null;
+        if (activeBtn != null) activeBtn.Tag = "Active";
+    }
 
     // Refresh Rate
     private async void BtnRefresh60_Click(object sender, RoutedEventArgs e) => await SafeExecute(() => _monitor.SetRefreshRateAsync(60));
