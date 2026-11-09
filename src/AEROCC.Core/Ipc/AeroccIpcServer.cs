@@ -67,10 +67,19 @@ public class AeroccIpcServer : IDisposable
             {
                 break;
             }
+            catch (UnauthorizedAccessException uex)
+            {
+                // Another process or service already owns the pipe
+                Console.WriteLine($"[IPC Server Loop Warning]: Pipe is already hosted by another running instance of AEROCC.Service: {uex.Message}");
+                await Task.Delay(2000, ct);
+            }
             catch (Exception ex)
             {
-                Console.WriteLine($"[IPC Server Loop Error]: {ex.Message}");
-                await Task.Delay(100, ct);
+                if (!ct.IsCancellationRequested)
+                {
+                    Console.WriteLine($"[IPC Server Loop Error]: {ex.Message}");
+                    await Task.Delay(500, ct);
+                }
             }
         }
     }
@@ -93,6 +102,10 @@ public class AeroccIpcServer : IDisposable
                 var jsonResp = JsonSerializer.Serialize(response);
                 await writer.WriteLineAsync(jsonResp.AsMemory(), ct);
             }
+        }
+        catch (IOException)
+        {
+            // Expected when client disconnects or closes
         }
         catch (Exception ex)
         {
