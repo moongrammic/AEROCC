@@ -56,8 +56,12 @@ public class HotkeyManager : IDisposable
         _hook.Install();
 
         // 2. Start Raw Input Receiver (listens for Gigabyte ITE EC HID reports 0xFF02 / 1)
+        _rawInput.MicMuteHotkeyPressed += OnMicMuteTogglePressed;
         _rawInput.PerformanceHotkeyPressed += OnPerformanceTogglePressed;
+        _rawInput.TouchpadHotkeyPressed += OnTouchpadTogglePressed;
         _rawInput.BacklightHotkeyPressed += OnBacklightTogglePressed;
+        _rawInput.AirplaneHotkeyPressed += OnAirplaneTogglePressed;
+        _rawInput.FnLockHotkeyPressed += OnRawFnLockPressed;
         _rawInput.Start();
 
         // 3. Hook WMI ACPI events
@@ -109,6 +113,12 @@ public class HotkeyManager : IDisposable
     private void OnBacklightTogglePressed()
     {
         BacklightCycleTriggered?.Invoke();
+    }
+
+    private void OnRawFnLockPressed()
+    {
+        IsFnLockActive = !IsFnLockActive;
+        FnLockTriggered?.Invoke(IsFnLockActive);
     }
 
     private void OnWmiFnLockChanged(bool locked)

@@ -36,15 +36,8 @@ public partial class MainWindow : Window
         Deactivated += OnWindowDeactivated;
         Loaded += OnWindowLoaded;
         Closing += OnWindowClosing;
-    }
 
-    private void OnWindowLoaded(object sender, RoutedEventArgs e)
-    {
-        PositionNearTray();
-        _isLoaded = true;
-        _monitor.Start();
-
-        // Initialize Global Hotkeys and Hardware Events
+        // Initialize Global Hotkeys and Hardware Events immediately (even when starting minimized)
         _hotkeyManager.GimateTriggered += OnGimateTriggered;
         _hotkeyManager.PerformanceCycleTriggered += OnPerformanceCycleTriggered;
         _hotkeyManager.MicMuteTriggered += OnMicMuteTriggered;
@@ -54,6 +47,14 @@ public partial class MainWindow : Window
         _hotkeyManager.FnLockTriggered += OnFnLockTriggered;
         _hotkeyManager.WinLockTriggered += OnWinLockTriggered;
         _hotkeyManager.Start();
+
+        _monitor.Start();
+    }
+
+    private void OnWindowLoaded(object sender, RoutedEventArgs e)
+    {
+        PositionNearTray();
+        _isLoaded = true;
     }
 
     private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -311,7 +312,8 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
-            var hwnd = new WindowInteropHelper(this).Handle;
+            var helper = new WindowInteropHelper(this);
+            var hwnd = helper.EnsureHandle();
             if (IsVisible && WindowActivationHelper.IsForeground(hwnd))
             {
                 Hide();
@@ -319,6 +321,7 @@ public partial class MainWindow : Window
             else
             {
                 PositionNearTray();
+                Show();
                 WindowActivationHelper.ForceForeground(hwnd);
                 Activate();
                 Focus();

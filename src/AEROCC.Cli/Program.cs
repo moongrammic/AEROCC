@@ -860,17 +860,33 @@ static async Task TestHotKeySnifferAsync(GigabyteWmiClient client, AEROCC.Core.I
             Console.ForegroundColor = ConsoleColor.White;
             Console.WriteLine(msg);
             Console.ResetColor();
-            try { File.AppendAllText("hotkeys_debug.log", $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch {}
+            ThreadPool.QueueUserWorkItem(_ => { try { File.AppendAllText("hotkeys_debug.log", $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch {} });
         }
     }
 
     void OnVendorHid(byte[] bytes)
     {
-        string msg = $"[RAW HID ITE] Hex: {BitConverter.ToString(bytes)} | Ints: [{string.Join(", ", bytes)}]";
+        string desc = "";
+        if (bytes.Length >= 4 && bytes[0] == 4 && bytes[1] == 0)
+        {
+            desc = bytes[3] switch
+            {
+                132 => " -> F4: Microphone Mute (0x84)",
+                146 => " -> F7: Fan Profile / Performance (0x92)",
+                129 => " -> F9: Touchpad Toggle (0x81)",
+                148 => " -> WinLock Toggle (0x94)",
+                149 => " -> FnLock Toggle (0x95)",
+                150 or 154 => " -> Space: Backlight Cycle (0x9A/0x96)",
+                130 or 133 or 138 => " -> F10: Airplane Mode (0x82/0x85)",
+                _ => $" -> Vendor Code {bytes[3]} (0x{bytes[3]:X2})"
+            };
+        }
+
+        string msg = $"[RAW HID ITE] Hex: {BitConverter.ToString(bytes)} | Ints: [{string.Join(", ", bytes)}]{desc}";
         Console.ForegroundColor = ConsoleColor.DarkYellow;
         Console.WriteLine(msg);
         Console.ResetColor();
-        try { File.AppendAllText("hotkeys_debug.log", $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch {}
+        ThreadPool.QueueUserWorkItem(_ => { try { File.AppendAllText("hotkeys_debug.log", $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch {} });
     }
 
     void OnWmiRaw(byte[] bytes)
@@ -879,7 +895,7 @@ static async Task TestHotKeySnifferAsync(GigabyteWmiClient client, AEROCC.Core.I
         Console.ForegroundColor = ConsoleColor.Magenta;
         Console.WriteLine(msg);
         Console.ResetColor();
-        try { File.AppendAllText("hotkeys_debug.log", $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch {}
+        ThreadPool.QueueUserWorkItem(_ => { try { File.AppendAllText("hotkeys_debug.log", $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch {} });
     }
 
     void OnGimate()
