@@ -844,8 +844,8 @@ static async Task TestHotKeySnifferAsync(GigabyteWmiClient client, AEROCC.Core.I
         {
             GlobalHotkeyHook.VK_F23 => "GiMATE / Copilot (VK_F23)",
             GlobalHotkeyHook.VK_F24 => "Touchpad Toggle (VK_F24)",
-            GlobalHotkeyHook.VK_FN => "Fn Key (VK_FN 0x83)",
-            GlobalHotkeyHook.VK_F21 => "Airplane Mode (VK_F21)",
+            GlobalHotkeyHook.VK_F20 => "Mic Mute OEM key (VK_F20 / 0x83)",
+            GlobalHotkeyHook.VK_F21 => "Airplane Mode (VK_F21 / 0x84)",
             GlobalHotkeyHook.VK_F4 => "F4 (Microphone)",
             GlobalHotkeyHook.VK_F7 => "F7 (Performance)",
             GlobalHotkeyHook.VK_F9 => "F9 (Touchpad)",
@@ -856,17 +856,30 @@ static async Task TestHotKeySnifferAsync(GigabyteWmiClient client, AEROCC.Core.I
 
         if (e.IsKeyDown)
         {
+            string msg = $"[KEY {dir}] {keyDesc} | Vk=0x{e.VkCode:X2} ({e.VkCode}), Scan=0x{e.ScanCode:X2}, Mods=[{mods}]";
             Console.ForegroundColor = ConsoleColor.White;
-            Console.WriteLine($"[KEY {dir}] {keyDesc} | Vk=0x{e.VkCode:X2} ({e.VkCode}), Scan=0x{e.ScanCode:X2}, Mods=[{mods}]");
+            Console.WriteLine(msg);
             Console.ResetColor();
+            try { File.AppendAllText("hotkeys_debug.log", $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch {}
         }
+    }
+
+    void OnVendorHid(byte[] bytes)
+    {
+        string msg = $"[RAW HID ITE] Hex: {BitConverter.ToString(bytes)} | Ints: [{string.Join(", ", bytes)}]";
+        Console.ForegroundColor = ConsoleColor.DarkYellow;
+        Console.WriteLine(msg);
+        Console.ResetColor();
+        try { File.AppendAllText("hotkeys_debug.log", $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch {}
     }
 
     void OnWmiRaw(byte[] bytes)
     {
+        string msg = $"[WMI ACPI EVENT] Code: {bytes[0]} | Raw Bytes: {BitConverter.ToString(bytes)}";
         Console.ForegroundColor = ConsoleColor.Magenta;
-        Console.WriteLine($"[WMI ACPI EVENT] Code: {bytes[0]} | Raw Bytes: {BitConverter.ToString(bytes)}");
+        Console.WriteLine(msg);
         Console.ResetColor();
+        try { File.AppendAllText("hotkeys_debug.log", $"{DateTime.Now:HH:mm:ss.fff} {msg}\n"); } catch {}
     }
 
     void OnGimate()
@@ -925,7 +938,9 @@ static async Task TestHotKeySnifferAsync(GigabyteWmiClient client, AEROCC.Core.I
         Console.ResetColor();
     }
 
+    mgr.Hook.SnifferMode = true;
     mgr.Hook.KeyIntercepted += OnKeyIntercepted;
+    mgr.RawInput.VendorHidReportReceived += OnVendorHid;
     mgr.WmiListener.RawEventArrived += OnWmiRaw;
     mgr.WmiListener.FnLockChanged += OnFnLockChanged;
     mgr.WmiListener.WinLockChanged += OnWinLockChanged;
@@ -962,7 +977,9 @@ static async Task TestHotKeySnifferAsync(GigabyteWmiClient client, AEROCC.Core.I
     }
     finally
     {
+        mgr.Hook.SnifferMode = false;
         mgr.Hook.KeyIntercepted -= OnKeyIntercepted;
+        mgr.RawInput.VendorHidReportReceived -= OnVendorHid;
         mgr.WmiListener.RawEventArrived -= OnWmiRaw;
         mgr.WmiListener.FnLockChanged -= OnFnLockChanged;
         mgr.WmiListener.WinLockChanged -= OnWinLockChanged;

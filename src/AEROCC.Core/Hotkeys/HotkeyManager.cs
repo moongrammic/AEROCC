@@ -12,6 +12,7 @@ public class HotkeyManager : IDisposable
     public static HotkeyManager Instance => _instance ??= new HotkeyManager();
 
     private readonly GlobalHotkeyHook _hook = new();
+    private readonly RawInputReceiver _rawInput = RawInputReceiver.Instance;
     private readonly WmiEventListener _wmiListener = WmiEventListener.Instance;
     private readonly MicrophoneManager _micManager = MicrophoneManager.Instance;
     private readonly TouchpadManager _touchpadManager = TouchpadManager.Instance;
@@ -37,13 +38,14 @@ public class HotkeyManager : IDisposable
     }
 
     public GlobalHotkeyHook Hook => _hook;
+    public RawInputReceiver RawInput => _rawInput;
     public WmiEventListener WmiListener => _wmiListener;
 
     public void Start()
     {
         if (_isStarted) return;
 
-        // 1. Hook keyboard events
+        // 1. Hook keyboard events (runs on dedicated high-priority background thread, 0ms latency)
         _hook.GimatePressed += OnGimatePressed;
         _hook.TouchpadTogglePressed += OnTouchpadTogglePressed;
         _hook.MicMuteTogglePressed += OnMicMuteTogglePressed;
@@ -53,7 +55,12 @@ public class HotkeyManager : IDisposable
 
         _hook.Install();
 
-        // 2. Hook WMI ACPI events
+        // 2. Start Raw Input Receiver (listens for Gigabyte ITE EC HID reports 0xFF02 / 1)
+        _rawInput.PerformanceHotkeyPressed += OnPerformanceTogglePressed;
+        _rawInput.BacklightHotkeyPressed += OnBacklightTogglePressed;
+        _rawInput.Start();
+
+        // 3. Hook WMI ACPI events
         _wmiListener.FnLockChanged += OnWmiFnLockChanged;
         _wmiListener.TouchpadChanged += OnWmiTouchpadChanged;
         _wmiListener.WinLockChanged += OnWmiWinLockChanged;
@@ -83,7 +90,6 @@ public class HotkeyManager : IDisposable
 
     private void OnTouchpadTogglePressed()
     {
-        // Give Windows 50ms to toggle precision touchpad state
         Task.Delay(60).ContinueWith(_ =>
         {
             bool isEnabled = _touchpadManager.IsTouchpadEnabled();
@@ -128,7 +134,7 @@ public class HotkeyManager : IDisposable
 
     private void OnWmiRawEventArrived(byte[] data)
     {
-        // Can be extended if hardware reports custom hotkeys via WMI
+        // Check for hardware events reported via WMI
     }
 
     public static FanProfile GetNextFanProfile(FanProfile current) => current switch
@@ -154,6 +160,7 @@ public class HotkeyManager : IDisposable
         if (!_isStarted) return;
 
         _hook.Uninstall();
+        _rawInput.Stop();
         _wmiListener.Stop();
         _isStarted = false;
     }
@@ -164,9 +171,10 @@ public class HotkeyManager : IDisposable
         {
             Stop();
             _hook.Dispose();
+            _rawInput.Dispose();
             _wmiListener.Dispose();
             _isDisposed = true;
-            GC.SuppressFinalize(this);
         }
+        GC.SuppressFinalize(this);
     }
 }

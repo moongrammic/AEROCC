@@ -5,8 +5,10 @@ using System.Windows.Threading;
 using AEROCC.App.Services;
 using AEROCC.Core.Display;
 using AEROCC.Core.Gpu;
+using AEROCC.Core.Helpers;
 using AEROCC.Core.Hotkeys;
 using AEROCC.Core.Models;
+using System.Windows.Interop;
 using Wpf.Ui.Controls;
 
 namespace AEROCC.App;
@@ -309,14 +311,15 @@ public partial class MainWindow : Window
     {
         Dispatcher.Invoke(() =>
         {
-            if (IsVisible && IsActive)
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (IsVisible && WindowActivationHelper.IsForeground(hwnd))
             {
                 Hide();
             }
             else
             {
                 PositionNearTray();
-                Show();
+                WindowActivationHelper.ForceForeground(hwnd);
                 Activate();
                 Focus();
             }
