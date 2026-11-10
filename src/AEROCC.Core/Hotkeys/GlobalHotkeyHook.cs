@@ -45,7 +45,7 @@ public class GlobalHotkeyHook : IDisposable
     public const uint VK_F7 = 0x76;
     public const uint VK_F9 = 0x78;
     public const uint VK_F10 = 0x79;
-    public const uint VK_F20 = 0x83; // Microphone Mute OEM key (Gigabyte Aero 16)
+    public const uint VK_FN = 0x83;  // Physical Fn key on Gigabyte Aero 16 (ScanCode = 0x6B)
     public const uint VK_F21 = 0x84; // Airplane / Radio key
     public const uint VK_F23 = 0x86; // GiMATE / Copilot key
     public const uint VK_F24 = 0x87; // Precision Touchpad toggle key
@@ -113,10 +113,12 @@ public class GlobalHotkeyHook : IDisposable
     private IntPtr _hookId = IntPtr.Zero;
     private LowLevelKeyboardProc? _proc;
     private bool _isDisposed = false;
+    private volatile bool _isFnHeld = false;
 
     public bool IsInstalled => _hookId != IntPtr.Zero;
     public bool SnifferMode { get; set; } = false;
     public bool IsFnLockActive { get; set; } = false;
+    public bool IsFnHeld => _isFnHeld;
 
     public event EventHandler<HotkeyEventArgs>? KeyIntercepted;
     public event Action? GimatePressed;
@@ -191,12 +193,15 @@ public class GlobalHotkeyHook : IDisposable
             // ULTRA-FAST PATH: If key is not targeted and not in sniffer mode, return immediately!
             if (!SnifferMode)
             {
-                if (vkCode != VK_F20 &&
+                if (vkCode != VK_FN &&
                     vkCode != VK_F21 &&
                     vkCode != VK_F23 &&
                     vkCode != VK_F24 &&
                     vkCode != VK_F4 &&
-                    vkCode != VK_F7)
+                    vkCode != VK_F7 &&
+                    vkCode != VK_F9 &&
+                    vkCode != VK_F10 &&
+                    vkCode != VK_SPACE)
                 {
                     return CallNextHookEx(_hookId, nCode, wParam, lParam);
                 }
@@ -208,6 +213,12 @@ public class GlobalHotkeyHook : IDisposable
             bool isKeyDown = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
             bool altDown = (flags & 0x20) != 0;
 
+            try
+            {
+                File.AppendAllText("hotkeys_app.log", $"{DateTime.Now:HH:mm:ss.fff} [HOOK] vk=0x{vkCode:X2} scan=0x{scanCode:X2} isDown={isKeyDown} fnHeld={_isFnHeld} fnLock={IsFnLockActive}\n");
+            }
+            catch {}
+
             // In sniffer mode, notify diagnostic listener
             if (SnifferMode && KeyIntercepted != null)
             {
@@ -218,27 +229,74 @@ public class GlobalHotkeyHook : IDisposable
                 KeyIntercepted.Invoke(this, args);
             }
 
-            // 1. Microphone Mute hardware key (0x83 / VK_F20)
-            if (vkCode == VK_F20)
+            // 1. Physical Fn key tracking (0x83 / Scan = 0x6B)
+            // When user holds Fn, Windows sends 0x83 typematic repeats.
+            // DO NOT toggle microphone! Only track whether Fn is held!
+            if (vkCode == VK_FN)
+            {
+                _isFnHeld = isKeyDown;
+                return (IntPtr)1; // Swallow 0x83 so Windows doesn't get flooded with OEM key repeats!
+            }
+
+            // Check physical Fn state
+            bool fnDown = _isFnHeld || ((GetAsyncKeyState((int)VK_FN) & 0x8000) != 0);
+
+            // Determine if multimedia actions should trigger:
+            // Either Fn is physically held (when FnLock is OFF),
+            // OR bare F-key is pressed (when FnLock is ON).
+            bool shouldTrigger = (fnDown && !IsFnLockActive) || (!fnDown && IsFnLockActive);
+
+            // 2. Microphone Mute (F4)
+            if (vkCode == VK_F4 && !altDown && shouldTrigger)
             {
                 if (isKeyDown)
                 {
                     ThreadPool.QueueUserWorkItem(_ => MicMuteTogglePressed?.Invoke());
                 }
-                return (IntPtr)1; // Swallow key
+                return (IntPtr)1; // Swallow F4
             }
 
-            // 2. Microphone Mute standard F4 key when FnLock is active (multimedia mode)
-            if (vkCode == VK_F4 && !altDown && IsFnLockActive)
+            // 3. Performance Profile switch (F7)
+            if (vkCode == VK_F7 && !altDown && shouldTrigger)
             {
                 if (isKeyDown)
                 {
-                    ThreadPool.QueueUserWorkItem(_ => MicMuteTogglePressed?.Invoke());
+                    ThreadPool.QueueUserWorkItem(_ => PerformanceTogglePressed?.Invoke());
                 }
-                return (IntPtr)1; // Swallow standard F4
+                return (IntPtr)1; // Swallow F7
             }
 
-            // 3. GiMATE / Copilot key (0x86 / VK_F23)
+            // 4. Keyboard Backlight brightness cycle (Fn + Space)
+            if (vkCode == VK_SPACE && fnDown)
+            {
+                if (isKeyDown)
+                {
+                    ThreadPool.QueueUserWorkItem(_ => BacklightTogglePressed?.Invoke());
+                }
+                return (IntPtr)1; // Swallow Space so whitespace is not typed!
+            }
+
+            // 5. Touchpad Toggle (F9)
+            if (vkCode == VK_F9 && !altDown && shouldTrigger)
+            {
+                if (isKeyDown)
+                {
+                    ThreadPool.QueueUserWorkItem(_ => TouchpadTogglePressed?.Invoke());
+                }
+                return (IntPtr)1; // Swallow F9
+            }
+
+            // 6. Airplane Mode (F10)
+            if (vkCode == VK_F10 && !altDown && shouldTrigger)
+            {
+                if (isKeyDown)
+                {
+                    ThreadPool.QueueUserWorkItem(_ => AirplaneTogglePressed?.Invoke());
+                }
+                return (IntPtr)1; // Swallow F10
+            }
+
+            // 7. GiMATE / Copilot key (0x86 / VK_F23)
             if (vkCode == VK_F23)
             {
                 if (isKeyDown)
@@ -252,17 +310,7 @@ public class GlobalHotkeyHook : IDisposable
                 return (IntPtr)1; // Swallow key to suppress Copilot
             }
 
-            // 4. Performance Profile switch (VK_F7)
-            if (vkCode == VK_F7 && !altDown)
-            {
-                if (isKeyDown)
-                {
-                    ThreadPool.QueueUserWorkItem(_ => PerformanceTogglePressed?.Invoke());
-                }
-                return (IntPtr)1; // Swallow F7 so caret browsing popups don't appear in browsers
-            }
-
-            // 5. Touchpad hardware key (0x87 / VK_F24)
+            // 8. Hardware Touchpad OEM key (0x87 / VK_F24)
             if (vkCode == VK_F24)
             {
                 if (isKeyDown)
@@ -272,7 +320,7 @@ public class GlobalHotkeyHook : IDisposable
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 
-            // 6. Airplane mode hardware key (0x84 / VK_F21)
+            // 9. Hardware Airplane OEM key (0x84 / VK_F21)
             if (vkCode == VK_F21)
             {
                 if (isKeyDown)
@@ -280,17 +328,6 @@ public class GlobalHotkeyHook : IDisposable
                     ThreadPool.QueueUserWorkItem(_ => AirplaneTogglePressed?.Invoke());
                 }
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
-            }
-
-            // 7. Keyboard Backlight brightness cycle (Ctrl+Alt+Space or dedicated trigger)
-            bool isCtrl = (GetAsyncKeyState(0x11) & 0x8000) != 0;
-            if (vkCode == VK_SPACE && isCtrl && altDown)
-            {
-                if (isKeyDown)
-                {
-                    ThreadPool.QueueUserWorkItem(_ => BacklightTogglePressed?.Invoke());
-                }
-                return (IntPtr)1;
             }
         }
 

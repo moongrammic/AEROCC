@@ -176,6 +176,7 @@ public class HardwareMonitor : IDisposable
     {
         var next = AEROCC.Core.Hotkeys.HotkeyManager.GetNextFanProfile(_currentFanProfile);
         await SetFanProfileAsync(next);
+        OsdService.Instance.ShowFanProfile(next);
         return next;
     }
 
