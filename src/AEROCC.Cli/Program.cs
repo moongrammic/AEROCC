@@ -871,8 +871,8 @@ static async Task TestHotKeySnifferAsync(GigabyteWmiClient client, AEROCC.Core.I
         {
             desc = bytes[3] switch
             {
-                132 => " -> F4: Microphone Mute (0x84)",
-                146 => " -> F7: Fan Profile / Performance (0x92)",
+                146 => " -> F4: Microphone Mute (0x92)",
+                132 => " -> F7: Fan Profile / Performance (0x84)",
                 129 => " -> F9: Touchpad Toggle (0x81)",
                 148 => " -> WinLock Toggle (0x94)",
                 149 => " -> FnLock Toggle (0x95)",

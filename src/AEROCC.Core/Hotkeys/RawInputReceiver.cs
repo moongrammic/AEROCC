@@ -348,7 +348,7 @@ public class RawInputReceiver : IDisposable
 
                             switch (code)
                             {
-                                case 132: // 0x84: Microphone Mute Toggle (Fn + F4)
+                                case 146: // 0x92: Microphone Mute Toggle (Fn + F4)
                                     if (now - _lastMicMuteTick > 300)
                                     {
                                         _lastMicMuteTick = now;
@@ -356,7 +356,7 @@ public class RawInputReceiver : IDisposable
                                     }
                                     break;
 
-                                case 146: // 0x92: Fan Profile / Performance Cycle (Fn + F7)
+                                case 132: // 0x84: Fan Profile / Performance Cycle (Fn + F7)
                                     if (now - _lastPerfTick > 300)
                                     {
                                         _lastPerfTick = now;
