@@ -2,7 +2,9 @@
 ; Inno Setup 6.x
 
 #define MyAppName "AEROCC"
+#ifndef MyAppVersion
 #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "moongrammic"
 #define MyAppURL "https://github.com/moongrammic/AEROCC"
 #define MyAppExeName "AEROCC.App.exe"
