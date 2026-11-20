@@ -11,6 +11,20 @@ public partial class App : System.Windows.Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        if (e.Args.Contains("--enable-autostart"))
+        {
+            AEROCC.App.MainWindow.SetAutostartEnabled(true);
+            Shutdown();
+            return;
+        }
+
+        if (e.Args.Contains("--disable-autostart"))
+        {
+            AEROCC.App.MainWindow.SetAutostartEnabled(false);
+            Shutdown();
+            return;
+        }
+
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         // Catch unhandled UI exceptions so app never silently disappears

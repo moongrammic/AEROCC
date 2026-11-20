@@ -439,7 +439,7 @@ public partial class MainWindow : Window
     private static bool IsAutostartEnabled() =>
         RunSchtasks($"/query /tn \"{AutostartTaskName}\"") == 0;
 
-    private static bool SetAutostartEnabled(bool enabled)
+    public static bool SetAutostartEnabled(bool enabled)
     {
         try
         {

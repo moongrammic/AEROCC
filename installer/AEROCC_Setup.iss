@@ -54,10 +54,10 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 ; Install background service if selected
 Filename: "{app}\{#MyServiceExeName}"; Parameters: "--install"; StatusMsg: "Установка и запуск службы AEROCCService..."; Tasks: startservice; Flags: runhidden waituntilterminated
-; Register autostart task if selected
-Filename: "schtasks.exe"; Parameters: "/create /tn ""AEROCC"" /tr ""\""{app}\{#MyAppExeName}\"" --minimized"" /sc onlogon /rl highest /f"; Tasks: autostartapp; Flags: runhidden waituntilterminated
-; Launch application after setup completes
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; Register autostart task if selected (uses AEROCC.App to write explicit XML with battery & unlimited execution settings)
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--enable-autostart"; Tasks: autostartapp; Flags: runhidden waituntilterminated runascurrentuser
+; Launch application after setup completes (runascurrentuser prevents CreateProcess Error 740 on elevated manifest)
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent runascurrentuser
 
 [UninstallRun]
 ; Stop and remove service before files are deleted
