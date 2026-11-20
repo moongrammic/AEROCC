@@ -72,13 +72,16 @@ public partial class OsdWindow : Window
             OsdIcon.Foreground = new SolidColorBrush(accentColor);
             IconBg.Fill = new SolidColorBrush(Color.FromArgb(45, accentColor.R, accentColor.G, accentColor.B));
 
-            // Position at top-center of primary screen
-            var screenWidth = SystemParameters.PrimaryScreenWidth;
+            // Position at top-center of primary screen's work area
+            var workArea = SystemParameters.WorkArea;
             UpdateLayout();
             Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
 
-            Left = (screenWidth - ActualWidth) / 2;
-            Top = 25;
+            double targetWidth = ActualWidth > 0 ? ActualWidth : DesiredSize.Width;
+            if (targetWidth <= 0) targetWidth = 280;
+
+            Left = workArea.Left + (workArea.Width - targetWidth) / 2;
+            Top = workArea.Top + 25;
 
             Show();
             _showAnim.Begin();

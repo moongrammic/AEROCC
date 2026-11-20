@@ -21,6 +21,15 @@ public class HotkeyManager : IDisposable
     private bool _isStarted = false;
     private bool _isDisposed = false;
 
+    // Centralized Debounce Ticks (prevents dual-fire when both GlobalHook and RawInput detect the same keypress)
+    private long _lastMicTriggerTick = 0;
+    private long _lastPerfTriggerTick = 0;
+    private long _lastTouchpadTriggerTick = 0;
+    private long _lastAirplaneTriggerTick = 0;
+    private long _lastBacklightTriggerTick = 0;
+    private long _lastGimateTriggerTick = 0;
+    private long _lastFnLockTriggerTick = 0;
+
     // Events for App / UI
     public event Action? GimateTriggered;
     public event Action? PerformanceCycleTriggered;
@@ -56,6 +65,7 @@ public class HotkeyManager : IDisposable
         _hook.Install();
 
         // 2. Start Raw Input Receiver (listens for Gigabyte ITE EC HID reports 0xFF02 / 1)
+        _rawInput.GimateHotkeyPressed += OnGimatePressed;
         _rawInput.MicMuteHotkeyPressed += OnMicMuteTogglePressed;
         _rawInput.PerformanceHotkeyPressed += OnPerformanceTogglePressed;
         _rawInput.TouchpadHotkeyPressed += OnTouchpadTogglePressed;
@@ -78,22 +88,38 @@ public class HotkeyManager : IDisposable
 
     private void OnGimatePressed()
     {
+        long now = Environment.TickCount64;
+        if (now - _lastGimateTriggerTick < 350) return;
+        _lastGimateTriggerTick = now;
+
         GimateTriggered?.Invoke();
     }
 
     private void OnPerformanceTogglePressed()
     {
+        long now = Environment.TickCount64;
+        if (now - _lastPerfTriggerTick < 350) return;
+        _lastPerfTriggerTick = now;
+
         PerformanceCycleTriggered?.Invoke();
     }
 
     private void OnMicMuteTogglePressed()
     {
+        long now = Environment.TickCount64;
+        if (now - _lastMicTriggerTick < 350) return;
+        _lastMicTriggerTick = now;
+
         bool newMute = _micManager.ToggleMute();
         MicMuteTriggered?.Invoke(newMute);
     }
 
     private void OnTouchpadTogglePressed()
     {
+        long now = Environment.TickCount64;
+        if (now - _lastTouchpadTriggerTick < 350) return;
+        _lastTouchpadTriggerTick = now;
+
         Task.Delay(60).ContinueWith(_ =>
         {
             bool isEnabled = _touchpadManager.IsTouchpadEnabled();
@@ -103,6 +129,10 @@ public class HotkeyManager : IDisposable
 
     private void OnAirplaneTogglePressed()
     {
+        long now = Environment.TickCount64;
+        if (now - _lastAirplaneTriggerTick < 350) return;
+        _lastAirplaneTriggerTick = now;
+
         Task.Delay(60).ContinueWith(_ =>
         {
             bool isActive = _airplaneManager.IsAirplaneModeActive();
@@ -112,11 +142,19 @@ public class HotkeyManager : IDisposable
 
     private void OnBacklightTogglePressed()
     {
+        long now = Environment.TickCount64;
+        if (now - _lastBacklightTriggerTick < 350) return;
+        _lastBacklightTriggerTick = now;
+
         BacklightCycleTriggered?.Invoke();
     }
 
     private void OnRawFnLockPressed()
     {
+        long now = Environment.TickCount64;
+        if (now - _lastFnLockTriggerTick < 350) return;
+        _lastFnLockTriggerTick = now;
+
         IsFnLockActive = !IsFnLockActive;
         FnLockTriggered?.Invoke(IsFnLockActive);
     }
@@ -168,6 +206,27 @@ public class HotkeyManager : IDisposable
     public void Stop()
     {
         if (!_isStarted) return;
+
+        _hook.GimatePressed -= OnGimatePressed;
+        _hook.TouchpadTogglePressed -= OnTouchpadTogglePressed;
+        _hook.MicMuteTogglePressed -= OnMicMuteTogglePressed;
+        _hook.PerformanceTogglePressed -= OnPerformanceTogglePressed;
+        _hook.AirplaneTogglePressed -= OnAirplaneTogglePressed;
+        _hook.BacklightTogglePressed -= OnBacklightTogglePressed;
+
+        _rawInput.GimateHotkeyPressed -= OnGimatePressed;
+        _rawInput.MicMuteHotkeyPressed -= OnMicMuteTogglePressed;
+        _rawInput.PerformanceHotkeyPressed -= OnPerformanceTogglePressed;
+        _rawInput.TouchpadHotkeyPressed -= OnTouchpadTogglePressed;
+        _rawInput.BacklightHotkeyPressed -= OnBacklightTogglePressed;
+        _rawInput.AirplaneHotkeyPressed -= OnAirplaneTogglePressed;
+        _rawInput.FnLockHotkeyPressed -= OnRawFnLockPressed;
+
+        _wmiListener.FnLockChanged -= OnWmiFnLockChanged;
+        _wmiListener.TouchpadChanged -= OnWmiTouchpadChanged;
+        _wmiListener.WinLockChanged -= OnWmiWinLockChanged;
+        _wmiListener.AirplaneModeChanged -= OnWmiAirplaneModeChanged;
+        _wmiListener.RawEventArrived -= OnWmiRawEventArrived;
 
         _hook.Uninstall();
         _rawInput.Stop();

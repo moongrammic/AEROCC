@@ -1,0 +1,98 @@
+name: Build & Release Installer
+
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Publish a GitHub Release with installer artifacts'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    name: Build AEROCC Setup & Portable
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Extract Version
+        id: get_version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $version = $env:GITHUB_REF.Substring(11)
+          } else {
+            $version = "1.0.0.$env:GITHUB_RUN_NUMBER"
+          }
+          Write-Host "Build Version: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Restore dependencies
+        run: dotnet restore AEROCC.slnx
+
+      - name: Publish AEROCC (Self-Contained x64)
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.get_version.outputs.version }}"
+          Write-Host "Publishing AEROCC.Service..."
+          dotnet publish src/AEROCC.Service/AEROCC.Service.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:Version=$ver -o publish
+
+          Write-Host "Publishing AEROCC.Cli..."
+          dotnet publish src/AEROCC.Cli/AEROCC.Cli.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:Version=$ver -o publish
+
+          Write-Host "Publishing AEROCC.App..."
+          dotnet publish src/AEROCC.App/AEROCC.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:Version=$ver -o publish
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress
+
+      - name: Build Inno Setup Installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          $ver = "${{ steps.get_version.outputs.version }}"
+          & $iscc "/DMyAppVersion=$ver" installer/AEROCC_Setup.iss
+
+      - name: Create Portable Zip Package
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.get_version.outputs.version }}"
+          $zipPath = "installer/Output/AEROCC_v${ver}_Portable_win-x64.zip"
+          Compress-Archive -Path publish\* -DestinationPath $zipPath -CompressionLevel Optimal
+          Write-Host "Portable archive created: $zipPath"
+
+      - name: Upload CI Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AEROCC-Installer-and-Portable
+          path: installer/Output/*
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/Output/*
+          tag_name: ${{ github.ref_name }}
+          name: "AEROCC v${{ steps.get_version.outputs.version }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true

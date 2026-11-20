@@ -139,7 +139,7 @@ public class GlobalHotkeyHook : IDisposable
     {
         if (_hookThread != null && _hookThread.IsAlive) return true;
 
-        var readyEvent = new ManualResetEventSlim(false);
+        using var readyEvent = new ManualResetEventSlim(false);
 
         _hookThread = new Thread(() =>
         {
@@ -197,22 +197,17 @@ public class GlobalHotkeyHook : IDisposable
             // Direct memory read of vkCode at offset 0
             uint vkCode = (uint)Marshal.ReadInt32(lParam);
 
-            // ULTRA-FAST PATH: If key is not targeted and not in sniffer mode, return immediately!
-            // This guarantees 0ms overhead and zero latency for normal keyboard typing.
-            if (!SnifferMode)
+            // Target key filter: ONLY hardware hotkeys and function keys are ever processed.
+            // Standard typing keys (letters, digits, punctuation, Enter, Backspace, etc.)
+            // are ALWAYS immediately forwarded to guarantee 0ms latency and prevent keystroke interception.
+            bool isTargetedKey = vkCode is VK_FN
+                or VK_F21 or VK_F23 or VK_F24
+                or VK_F4 or VK_F7 or VK_F9 or VK_F10 or VK_SPACE
+                || (SnifferMode && vkCode is >= 0x70 and <= 0x87); // F1 - F24 during diagnostic sniffer
+
+            if (!isTargetedKey)
             {
-                if (vkCode != VK_FN &&
-                    vkCode != VK_F21 &&
-                    vkCode != VK_F23 &&
-                    vkCode != VK_F24 &&
-                    vkCode != VK_F4 &&
-                    vkCode != VK_F7 &&
-                    vkCode != VK_F9 &&
-                    vkCode != VK_F10 &&
-                    vkCode != VK_SPACE)
-                {
-                    return CallNextHookEx(_hookId, nCode, wParam, lParam);
-                }
+                return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 
             uint scanCode = (uint)Marshal.ReadInt32(lParam, 4);

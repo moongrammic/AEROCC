@@ -6,6 +6,8 @@ namespace AEROCC.App;
 public partial class App : System.Windows.Application
 {
     private static Mutex? _mutex;
+    private static bool _ownsMutex = false;
+    public bool IsSessionEnding { get; private set; } = false;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -34,9 +36,16 @@ public partial class App : System.Windows.Application
             }
         };
 
+        SessionEnding += (s, args) =>
+        {
+            IsSessionEnding = true;
+        };
+
         const string appGuid = "AEROCC_SingleInstance_App_Aero16";
         _mutex = new Mutex(true, appGuid, out bool isNewInstance);
-        if (!isNewInstance)
+        _ownsMutex = isNewInstance;
+
+        if (!_ownsMutex)
         {
             MessageBox.Show(
                 "Приложение AEROCC уже запущено в системном трее (возле часов Windows).",
@@ -49,6 +58,8 @@ public partial class App : System.Windows.Application
 
         base.OnStartup(e);
 
+        AEROCC.Core.Wmi.GigabyteWmiMofRegistrar.EnsureRegistered();
+
         var mainWindow = new MainWindow();
         bool startMinimized = e.Args.Contains("--minimized") || e.Args.Contains("-m") || e.Args.Contains("/min");
         if (!startMinimized)
@@ -59,8 +70,22 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _mutex?.ReleaseMutex();
-        _mutex?.Dispose();
+        if (_ownsMutex && _mutex != null)
+        {
+            try
+            {
+                _mutex.ReleaseMutex();
+            }
+            catch (ApplicationException)
+            {
+            }
+            finally
+            {
+                _mutex.Dispose();
+                _mutex = null;
+                _ownsMutex = false;
+            }
+        }
         base.OnExit(e);
     }
 }

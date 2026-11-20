@@ -18,7 +18,7 @@ public enum GpuPowerMode
 public record GpuTelemetry
 {
     public string Name { get; init; } = "NVIDIA GeForce RTX";
-    public string IntegratedName { get; init; } = "AMD Radeon 860M";
+    public string IntegratedName { get; init; } = "Integrated GPU";
     public GpuPowerState PowerState { get; init; } = GpuPowerState.Unknown;
     public GpuPowerMode PowerMode { get; init; } = GpuPowerMode.Dynamic;
     public int? Temperature { get; init; }

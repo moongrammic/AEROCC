@@ -51,6 +51,9 @@ public class TrayIconService : IDisposable
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr hIcon);
 
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern uint RegisterWindowMessage(string lpString);
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -58,6 +61,8 @@ public class TrayIconService : IDisposable
     private HwndSource? _hwndSource;
     private IntPtr _hIcon = IntPtr.Zero;
     private bool _isCreated;
+    private uint _wmTaskbarCreated = 0;
+    private string _currentTooltip = "AEROCC - Gigabyte Aero 16 (1VH)";
     private const int TrayId = 1001;
 
     public event Action? LeftClick;
@@ -66,6 +71,9 @@ public class TrayIconService : IDisposable
     public void Initialize()
     {
         if (_isCreated) return;
+
+        // Register TaskbarCreated message to restore icon if Explorer crashes
+        _wmTaskbarCreated = RegisterWindowMessage("TaskbarCreated");
 
         // Create invisible message-only HWND
         var parameters = new HwndSourceParameters("AEROCC_TrayListener")
@@ -80,6 +88,13 @@ public class TrayIconService : IDisposable
         _hwndSource.AddHook(WndProc);
 
         _hIcon = CreateAeroIcon();
+        RecreateIcon();
+    }
+
+    private void RecreateIcon()
+    {
+        if (_hwndSource == null) return;
+        if (_hIcon == IntPtr.Zero) _hIcon = CreateAeroIcon();
 
         var nid = new NOTIFYICONDATA
         {
@@ -89,7 +104,7 @@ public class TrayIconService : IDisposable
             uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP,
             uCallbackMessage = WM_TRAYICON,
             hIcon = _hIcon,
-            szTip = "AEROCC - Gigabyte Aero 16 (1VH)"
+            szTip = _currentTooltip
         };
 
         _isCreated = Shell_NotifyIcon(NIM_ADD, ref nid);
@@ -97,6 +112,7 @@ public class TrayIconService : IDisposable
 
     public void UpdateTooltip(string text)
     {
+        _currentTooltip = text.Length > 127 ? text[..127] : text;
         if (!_isCreated || _hwndSource == null) return;
 
         var nid = new NOTIFYICONDATA
@@ -105,7 +121,7 @@ public class TrayIconService : IDisposable
             hWnd = _hwndSource.Handle,
             uID = TrayId,
             uFlags = NIF_TIP,
-            szTip = text.Length > 127 ? text[..127] : text
+            szTip = _currentTooltip
         };
 
         Shell_NotifyIcon(NIM_MODIFY, ref nid);
@@ -113,6 +129,13 @@ public class TrayIconService : IDisposable
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (msg == _wmTaskbarCreated && _wmTaskbarCreated != 0)
+        {
+            RecreateIcon();
+            handled = true;
+            return IntPtr.Zero;
+        }
+
         if (msg == WM_TRAYICON)
         {
             int lparamVal = lParam.ToInt32();
@@ -123,6 +146,10 @@ public class TrayIconService : IDisposable
             }
             else if (lparamVal == WM_RBUTTONUP)
             {
+                if (_hwndSource != null)
+                {
+                    SetForegroundWindow(_hwndSource.Handle);
+                }
                 RightClick?.Invoke();
                 handled = true;
             }
@@ -133,13 +160,38 @@ public class TrayIconService : IDisposable
 
     private static IntPtr CreateAeroIcon()
     {
+        try
+        {
+            var iconUri = new Uri("pack://application:,,,/Assets/aero-badge.png");
+            var streamInfo = System.Windows.Application.GetResourceStream(iconUri);
+            if (streamInfo != null)
+            {
+                using var bmp = new Bitmap(streamInfo.Stream);
+                using var resized = new Bitmap(bmp, new Size(32, 32));
+                return resized.GetHicon();
+            }
+        }
+        catch { }
+
+        try
+        {
+            var localBadge = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "aero-badge.png");
+            if (System.IO.File.Exists(localBadge))
+            {
+                using var bmp = new Bitmap(localBadge);
+                using var resized = new Bitmap(bmp, new Size(32, 32));
+                return resized.GetHicon();
+            }
+        }
+        catch { }
+
         using var bitmap = new Bitmap(32, 32);
         using (var g = Graphics.FromImage(bitmap))
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.Clear(SDColor.Transparent);
 
-            // Sleek orange / dark gradient badge with letter "A"
+            // Sleek orange / dark gradient badge
             using var brush = new LinearGradientBrush(
                 new SDPoint(0, 0),
                 new SDPoint(32, 32),
@@ -147,19 +199,6 @@ public class TrayIconService : IDisposable
                 SDColor.FromArgb(255, 60, 0));
 
             g.FillEllipse(brush, 1, 1, 30, 30);
-
-            using var pen = new Pen(SDColor.FromArgb(180, 255, 255, 255), 1.5f);
-            g.DrawEllipse(pen, 1, 1, 30, 30);
-
-            using var font = new Font("Segoe UI", 16, System.Drawing.FontStyle.Bold, GraphicsUnit.Pixel);
-            using var textBrush = new SolidBrush(SDColor.White);
-            var format = new StringFormat
-            {
-                Alignment = StringAlignment.Center,
-                LineAlignment = StringAlignment.Center
-            };
-
-            g.DrawString("A", font, textBrush, new RectangleF(0, 0, 32, 32), format);
         }
 
         return bitmap.GetHicon();

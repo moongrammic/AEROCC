@@ -71,47 +71,116 @@ await host.RunAsync();
 
 static void InstallService()
 {
-    string exePath = Process.GetCurrentProcess().MainModule?.FileName ?? Environment.ProcessPath!;
+    if (!AEROCC.Core.Wmi.GigabyteWmiClient.IsAdministrator())
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("[x] Ошибка: Для установки службы Windows требуются права Администратора.");
+        Console.WriteLine("    Запустите терминал от имени Администратора и повторите команду.");
+        Console.ResetColor();
+        return;
+    }
+
+    string exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName!;
     Console.WriteLine($"Установка службы Windows: {ServiceName}...");
     Console.WriteLine($"Исполняемый файл: {exePath}");
 
-    RunSc($"create {ServiceName} binPath= \"\\\"{exePath}\\\"\" start= auto DisplayName= \"{ServiceDisplayName}\"");
-    RunSc($"description {ServiceName} \"Легковесная служба низкоуровневого управления Gigabyte Aero 16 (AEROCC)\"");
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine("[✓] Служба AEROCCService успешно установлена с автозапуском!");
-    Console.ResetColor();
+    bool created = RunSc($"create {ServiceName} binPath= \"\\\"{exePath}\\\"\" start= auto DisplayName= \"{ServiceDisplayName}\"");
+    if (created)
+    {
+        RunSc($"description {ServiceName} \"Легковесная служба низкоуровневого управления Gigabyte Aero 16 (AEROCC)\"");
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("[✓] Служба AEROCCService успешно установлена с автозапуском!");
+        Console.ResetColor();
 
-    Console.WriteLine("Запуск службы...");
-    StartService();
+        Console.WriteLine("Запуск службы...");
+        StartService();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("[x] Не удалось установить службу AEROCCService.");
+        Console.ResetColor();
+    }
 }
 
 static void UninstallService()
 {
+    if (!AEROCC.Core.Wmi.GigabyteWmiClient.IsAdministrator())
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("[x] Ошибка: Для удаления службы Windows требуются права Администратора.");
+        Console.ResetColor();
+        return;
+    }
+
     Console.WriteLine($"Удаление службы Windows: {ServiceName}...");
     RunSc($"stop {ServiceName}");
-    RunSc($"delete {ServiceName}");
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine("[✓] Служба AEROCCService успешно удалена.");
-    Console.ResetColor();
+    bool deleted = RunSc($"delete {ServiceName}");
+    if (deleted)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("[✓] Служба AEROCCService успешно удалена.");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("[x] Не удалось удалить службу AEROCCService.");
+        Console.ResetColor();
+    }
 }
 
 static void StartService()
 {
-    RunSc($"start {ServiceName}");
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine("[✓] Служба AEROCCService запущена.");
-    Console.ResetColor();
+    if (!AEROCC.Core.Wmi.GigabyteWmiClient.IsAdministrator())
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("[x] Ошибка: Для запуска службы требуются права Администратора.");
+        Console.ResetColor();
+        return;
+    }
+
+    bool started = RunSc($"start {ServiceName}");
+    if (started)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("[✓] Служба AEROCCService запущена.");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("[x] Не удалось запустить службу AEROCCService.");
+        Console.ResetColor();
+    }
 }
 
 static void StopService()
 {
-    RunSc($"stop {ServiceName}");
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine("[✓] Служба AEROCCService остановлена.");
-    Console.ResetColor();
+    if (!AEROCC.Core.Wmi.GigabyteWmiClient.IsAdministrator())
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("[x] Ошибка: Для остановки службы требуются права Администратора.");
+        Console.ResetColor();
+        return;
+    }
+
+    bool stopped = RunSc($"stop {ServiceName}");
+    if (stopped)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("[✓] Служба AEROCCService остановлена.");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("[x] Не удалось остановить службу AEROCCService.");
+        Console.ResetColor();
+    }
 }
 
-static void RunSc(string arguments)
+static bool RunSc(string arguments)
 {
     try
     {
@@ -121,18 +190,26 @@ static void RunSc(string arguments)
             Arguments = arguments,
             UseShellExecute = false,
             RedirectStandardOutput = true,
+            RedirectStandardError = true,
             CreateNoWindow = true
         });
 
         proc?.WaitForExit();
         var output = proc?.StandardOutput.ReadToEnd();
+        var err = proc?.StandardError.ReadToEnd();
         if (!string.IsNullOrWhiteSpace(output))
         {
             Console.WriteLine(output.Trim());
         }
+        if (!string.IsNullOrWhiteSpace(err))
+        {
+            Console.WriteLine(err.Trim());
+        }
+        return proc?.ExitCode == 0;
     }
     catch (Exception ex)
     {
         Console.WriteLine($"[sc error]: {ex.Message}");
+        return false;
     }
 }

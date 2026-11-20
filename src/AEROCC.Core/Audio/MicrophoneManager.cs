@@ -49,38 +49,27 @@ public class MicrophoneManager
 
     public event Action<bool>? MuteChanged;
 
-    private IAudioEndpointVolume? GetDefaultCaptureVolume()
+    public bool GetMute()
     {
+        IMMDeviceEnumerator? enumerator = null;
+        IMMDevice? dev = null;
+        IAudioEndpointVolume? vol = null;
+
         try
         {
-            var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-            int hr = enumerator.GetDefaultAudioEndpoint(DATAFLOW_CAPTURE, ROLE_MULTIMEDIA, out var dev);
+            enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+            int hr = enumerator.GetDefaultAudioEndpoint(DATAFLOW_CAPTURE, ROLE_MULTIMEDIA, out dev);
             if (hr != 0 || dev == null)
             {
-                // Fallback to console role
                 hr = enumerator.GetDefaultAudioEndpoint(DATAFLOW_CAPTURE, ROLE_CONSOLE, out dev);
-                if (hr != 0 || dev == null) return null;
+                if (hr != 0 || dev == null) return false;
             }
 
             Guid iid = typeof(IAudioEndpointVolume).GUID;
             hr = dev.Activate(iid, CLSCTX_ALL, IntPtr.Zero, out var volumeObj);
-            if (hr != 0 || volumeObj == null) return null;
+            if (hr != 0 || volumeObj == null) return false;
 
-            return (IAudioEndpointVolume)volumeObj;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    public bool GetMute()
-    {
-        var vol = GetDefaultCaptureVolume();
-        if (vol == null) return false;
-
-        try
-        {
+            vol = (IAudioEndpointVolume)volumeObj;
             vol.GetMute(out bool isMuted);
             return isMuted;
         }
@@ -88,18 +77,38 @@ public class MicrophoneManager
         {
             return false;
         }
+        finally
+        {
+            SafeReleaseCom(vol);
+            SafeReleaseCom(dev);
+            SafeReleaseCom(enumerator);
+        }
     }
 
     public bool SetMute(bool mute)
     {
-        var vol = GetDefaultCaptureVolume();
-        if (vol == null) return false;
+        IMMDeviceEnumerator? enumerator = null;
+        IMMDevice? dev = null;
+        IAudioEndpointVolume? vol = null;
 
         try
         {
+            enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+            int hr = enumerator.GetDefaultAudioEndpoint(DATAFLOW_CAPTURE, ROLE_MULTIMEDIA, out dev);
+            if (hr != 0 || dev == null)
+            {
+                hr = enumerator.GetDefaultAudioEndpoint(DATAFLOW_CAPTURE, ROLE_CONSOLE, out dev);
+                if (hr != 0 || dev == null) return false;
+            }
+
+            Guid iid = typeof(IAudioEndpointVolume).GUID;
+            hr = dev.Activate(iid, CLSCTX_ALL, IntPtr.Zero, out var volumeObj);
+            if (hr != 0 || volumeObj == null) return false;
+
+            vol = (IAudioEndpointVolume)volumeObj;
             Guid ctx = Guid.Empty;
-            int hr = vol.SetMute(mute, ref ctx);
-            if (hr == 0)
+            int setHr = vol.SetMute(mute, ref ctx);
+            if (setHr == 0)
             {
                 MuteChanged?.Invoke(mute);
                 return true;
@@ -110,13 +119,32 @@ public class MicrophoneManager
         {
             return false;
         }
+        finally
+        {
+            SafeReleaseCom(vol);
+            SafeReleaseCom(dev);
+            SafeReleaseCom(enumerator);
+        }
+    }
+
+    private static void SafeReleaseCom(object? comObj)
+    {
+        if (comObj != null && Marshal.IsComObject(comObj))
+        {
+            try
+            {
+                Marshal.ReleaseComObject(comObj);
+            }
+            catch
+            {
+            }
+        }
     }
 
     public bool ToggleMute()
     {
         bool current = GetMute();
-        bool newMute = !current;
-        SetMute(newMute);
-        return newMute;
+        bool target = !current;
+        return SetMute(target) ? target : current;
     }
 }

@@ -1,0 +1,288 @@
+#pragma autorecover
+#pragma namespace("\\\\.\\root\\WMI")
+
+[WMI,
+ Dynamic,
+ Provider("WmiProv"),
+ Locale("MS\\0x409"),
+ Description("Gigabyte ACPI WMI Data"),
+ guid("{ABBC0F6C-8EA1-11d1-00A0-C90629100000}")]
+class GB_WMIACPI_Data
+{
+    [key, read]
+    string InstanceName;
+
+    [read]
+    boolean Active;
+
+    [WmiDataId(1), read, write, Description("Data")]
+    uint32 Data;
+};
+
+[WMI,
+ Dynamic,
+ Provider("WmiProv"),
+ Locale("MS\\0x409"),
+ Description("Gigabyte ACPI WMI Event"),
+ guid("{ABBC0F72-8EA1-11d1-00A0-C90629100000}")]
+class GB_WMIACPI_Event : WMIEvent
+{
+    [key, read]
+    string InstanceName;
+
+    [read]
+    boolean Active;
+
+    [WmiDataId(1), read, Description("Event Data")]
+    uint8 Data[4];
+};
+
+[WMI,
+ Dynamic,
+ Provider("WmiProv"),
+ Locale("MS\\0x409"),
+ Description("Gigabyte ACPI WMI Get Methods"),
+ guid("{ABBC0F6F-8EA1-11d1-00A0-C90629100000}")]
+class GB_WMIACPI_Get
+{
+    [key, read]
+    string InstanceName;
+
+    [read]
+    boolean Active;
+
+    [WmiMethodId(0x46), Implemented, Description("Get CPU Fan Duty")]
+    void GetCPUFanDuty([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x47), Implemented, Description("Get GPU Fan Duty")]
+    void GetGPUFanDuty([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x57), Implemented, Description("Get NV Thermal Target")]
+    void getNvThermalTarget([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x61), Implemented, Description("Get Battery Health")]
+    void GetBatteryHealth([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x63), Implemented, Description("Get Power On Time")]
+    void GetPowerOnTime(
+        [out, ID(0)] uint8 Year,
+        [out, ID(1)] uint8 Month,
+        [out, ID(2)] uint8 Day,
+        [out, ID(3)] uint8 Hour,
+        [out, ID(4)] uint8 Minute
+    );
+
+    [WmiMethodId(0x64), Implemented, Description("Get Charge Policy")]
+    void GetChargePolicy([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x65), Implemented, Description("Get Charge Stop")]
+    void GetChargeStop([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x67), Implemented, Description("Get Step Fan Status")]
+    void GetStepFanStatus([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x68), Implemented, Description("Get Fan Index Value")]
+    void GetFanIndexValue([in, ID(0)] uint8 Index, [out, ID(1)] uint16 Data);
+
+    [WmiMethodId(0x6A), Implemented, Description("Get Fixed Fan Status")]
+    void GetFixedFanStatus([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x6B), Implemented, Description("Get Fixed Fan Speed")]
+    void GetFixedFanSpeed([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x70), Implemented, Description("Get Fan Adjust Status")]
+    void GetFanAdjustStatus([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x71), Implemented, Description("Get Auto Fan Status")]
+    void GetAutoFanStatus([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x87), Implemented, Description("Get Power LED Display")]
+    void getPwrLightDisplay([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x88), Implemented, Description("Get Battery LED Display")]
+    void getBatteryLightDisplay([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xA1), Implemented, Description("Get Second Display Status")]
+    void getSecondDisplay([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xA2), Implemented, Description("Get PD Charge In Status")]
+    void getPdChargeInStatus([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xA3), Implemented, Description("Get PEG2 or SG2 Display Mode")]
+    void GetPEG2orSG2([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xC7), Implemented, Description("Get Mute Status")]
+    void getMuteStatus([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xC9), Implemented, Description("Get Fn Key Lock Status")]
+    void getFnKeyLockStatus([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xCA), Implemented, Description("Get PS2 Keyboard Auto Mode")]
+    void getPs2KbAutoMode([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xCB), Implemented, Description("Get Win Key Lock Status")]
+    void getWinKeyLockStatus([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xD9), Implemented, Description("Get Charge Mode")]
+    void GetChargeMode([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xE1), Implemented, Description("Get CPU Temperature")]
+    void getCpuTemp([out, ID(0)] uint16 Data);
+
+    [WmiMethodId(0xE2), Implemented, Description("Get Secondary CPU/Skin Temperature")]
+    void getCpuTemp2([out, ID(0)] uint16 Data);
+
+    [WmiMethodId(0xE4), Implemented, Description("Get Fan 1 RPM")]
+    void getRpm1([out, ID(0)] uint16 Data);
+
+    [WmiMethodId(0xE5), Implemented, Description("Get Fan 2 RPM")]
+    void getRpm2([out, ID(0)] uint16 Data);
+
+    [WmiMethodId(0xE6), Implemented, Description("Get Battery NCM Flags")]
+    void GetBatteryNCM([out, ID(0)] uint16 Data);
+
+    [WmiMethodId(0xE7), Implemented, Description("Get System Power Load")]
+    void GetSystemPowerLoad([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xEB), Implemented, Description("Get AI Power Control Capability")]
+    void getAiPowerCtlCapability([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xEF), Implemented, Description("Get Lid Status")]
+    void getLidStatus([out, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xF6), Implemented, Description("Get Keyboard Backlight")]
+    void getKeyBoardBackLight([out, ID(0)] uint8 Data);
+};
+
+[WMI,
+ Dynamic,
+ Provider("WmiProv"),
+ Locale("MS\\0x409"),
+ Description("Gigabyte ACPI WMI Set Methods"),
+ guid("{ABBC0F75-8EA1-11d1-00A0-C90629100000}")]
+class GB_WMIACPI_Set
+{
+    [key, read]
+    string InstanceName;
+
+    [read]
+    boolean Active;
+
+    [WmiMethodId(0x46), Implemented, Description("Set CPU Fan Duty")]
+    void SetCPUFanDuty([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x47), Implemented, Description("Set GPU Fan Duty")]
+    void SetGPUFanDuty([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x4A), Implemented, Description("Set GPU Dynamic Boost")]
+    void SetGpuDynamicBoost([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x4B), Implemented, Description("Set GPU Thermal Limit")]
+    void SetGpuThermalTarget([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x4C), Implemented, Description("Set GPU Configurable TGP Offset")]
+    void SetGpuAcBatteryTarget([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x51), Implemented, Description("Set NV Power Config")]
+    void SetNvPowerConfig([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x57), Implemented, Description("Set NV Thermal Target")]
+    void SetNvThermalTarget([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x63), Implemented, Description("Save Power On Time")]
+    void SavePowerOnTime(
+        [in, ID(0)] uint8 Year,
+        [in, ID(1)] uint8 Month,
+        [in, ID(2)] uint8 Day,
+        [in, ID(3)] uint8 Hour,
+        [in, ID(4)] uint8 Minute
+    );
+
+    [WmiMethodId(0x64), Implemented, Description("Set Charge Policy")]
+    void SetChargePolicy([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x65), Implemented, Description("Set Charge Stop")]
+    void SetChargeStop([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x66), Implemented, Description("Set Current Fan Step")]
+    void SetCurrentFanStep([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x67), Implemented, Description("Set Step Fan Status")]
+    void SetStepFanStatus([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x68), Implemented, Description("Set Fan Index Value")]
+    void SetFanIndexValue(
+        [in, ID(0)] uint8 Index,
+        [in, ID(1)] uint8 Temperture,
+        [in, ID(2)] uint8 Value
+    );
+
+    [WmiMethodId(0x6A), Implemented, Description("Set Fixed Fan Status")]
+    void SetFixedFanStatus([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x6B), Implemented, Description("Set Fixed Fan Speed")]
+    void SetFixedFanSpeed([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x70), Implemented, Description("Set Fan Adjust Status")]
+    void SetFanAdjustStatus([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x71), Implemented, Description("Set Auto Fan Status")]
+    void SetAutoFanStatus([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x87), Implemented, Description("Set Power LED Display")]
+    void SetPwrLightDisplay([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0x88), Implemented, Description("Set Battery LED Display")]
+    void SetBatteryLightDisplay([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xA3), Implemented, Description("Set PEG2 or SG2 Display Mode")]
+    void SetPEG2orSG2([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xC7), Implemented, Description("Set Mute Status")]
+    void SetMuteStatus([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xC9), Implemented, Description("Set Fn Key Lock Status")]
+    void SetFnKeyLockStatus([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xCA), Implemented, Description("Set PS2 Keyboard Auto Mode")]
+    void SetPs2KbAutoMode([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xCB), Implemented, Description("Set Win Key Lock Status")]
+    void SetWinKeyLockStatus([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xD9), Implemented, Description("Set Charge Mode")]
+    void SetChargeMode([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xE6), Implemented, Description("Set Battery NCM Flags")]
+    void SetBatteryNCM([in, ID(0)] uint16 Data);
+
+    [WmiMethodId(0xE7), Implemented, Description("Set System Power Load")]
+    void SetSystemPowerLoad([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xED), Implemented, Description("Set Fan Mode Notify")]
+    void SetFanModeNotify([in, ID(0)] uint8 Data);
+
+    [WmiMethodId(0xF1), Implemented, Description("Set PFM Parameter 1")]
+    void SetPfmParameter1([in, ID(0)] uint32 Data);
+
+    [WmiMethodId(0xF2), Implemented, Description("Set PFM Parameter 2")]
+    void SetPfmParameter2([in, ID(0)] uint32 Data);
+
+    [WmiMethodId(0xF3), Implemented, Description("Set PFM Parameter 3")]
+    void SetPfmParameter3([in, ID(0)] uint32 Data);
+
+    [WmiMethodId(0xF1), Implemented, Description("Set APU Parameter 1")]
+    void SetApuParameter1([in, ID(0)] uint32 Data);
+
+    [WmiMethodId(0xF2), Implemented, Description("Set APU Parameter 2")]
+    void SetApuParameter2([in, ID(0)] uint32 Data);
+
+    [WmiMethodId(0xF3), Implemented, Description("Set APU Parameter 3")]
+    void SetApuParameter3([in, ID(0)] uint32 Data);
+
+    [WmiMethodId(0xF4), Implemented, Description("Set APU Parameter 4")]
+    void SetApuParameter4([in, ID(0)] uint32 Data);
+
+    [WmiMethodId(0xF6), Implemented, Description("Set Keyboard Backlight")]
+    void SetKeyBoardBackLight([in, ID(0)] uint8 Data);
+};

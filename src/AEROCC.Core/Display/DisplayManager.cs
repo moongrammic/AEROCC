@@ -21,6 +21,8 @@ public static class DisplayManager
     private const int ENUM_CURRENT_SETTINGS = -1;
     private const int CDS_UPDATEREGISTRY = 0x01;
     private const int DISP_CHANGE_SUCCESSFUL = 0;
+    private const int DM_PELSWIDTH = 0x00080000;
+    private const int DM_PELSHEIGHT = 0x00100000;
     private const int DM_DISPLAYFREQUENCY = 0x00400000;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
@@ -87,6 +89,9 @@ public static class DisplayManager
     [DllImport("user32.dll", CharSet = CharSet.Ansi)]
     private static extern int ChangeDisplaySettingsEx(string? lpszDeviceName, ref DEVMODE lpDevMode, IntPtr hwnd, uint dwflags, IntPtr lParam);
 
+    private static readonly Dictionary<string, (int Width, int Height, List<int> Frequencies)> _frequencyCache = new();
+    private static readonly object _freqLock = new();
+
     public static List<DisplayInfo> GetDisplays()
     {
         var result = new List<DisplayInfo>();
@@ -125,21 +130,42 @@ public static class DisplayManager
                     info.CurrentFrequency = dm.dmDisplayFrequency;
                 }
 
-                // Query all available frequencies for the current native resolution
-                var freqSet = new SortedSet<int>();
-                int modeNum = 0;
-                while (EnumDisplaySettings(info.DeviceName, modeNum++, ref dm))
+                // Check cache for available frequencies to avoid heavy EnumDisplaySettings loops on every poll
+                List<int>? freqs = null;
+                lock (_freqLock)
                 {
-                    if (dm.dmPelsWidth == info.CurrentWidth && dm.dmPelsHeight == info.CurrentHeight)
+                    if (_frequencyCache.TryGetValue(info.DeviceName, out var cached) &&
+                        cached.Width == info.CurrentWidth &&
+                        cached.Height == info.CurrentHeight)
                     {
-                        if (dm.dmDisplayFrequency > 0)
-                        {
-                            freqSet.Add(dm.dmDisplayFrequency);
-                        }
+                        freqs = cached.Frequencies;
                     }
                 }
 
-                info.AvailableFrequencies = freqSet.ToList();
+                if (freqs == null)
+                {
+                    // Query all available frequencies for the current native resolution once
+                    var freqSet = new SortedSet<int>();
+                    int modeNum = 0;
+                    while (EnumDisplaySettings(info.DeviceName, modeNum++, ref dm))
+                    {
+                        if (dm.dmPelsWidth == info.CurrentWidth && dm.dmPelsHeight == info.CurrentHeight)
+                        {
+                            if (dm.dmDisplayFrequency > 0)
+                            {
+                                freqSet.Add(dm.dmDisplayFrequency);
+                            }
+                        }
+                    }
+
+                    freqs = freqSet.ToList();
+                    lock (_freqLock)
+                    {
+                        _frequencyCache[info.DeviceName] = (info.CurrentWidth, info.CurrentHeight, freqs);
+                    }
+                }
+
+                info.AvailableFrequencies = freqs;
                 result.Add(info);
             }
 
@@ -183,9 +209,14 @@ public static class DisplayManager
         }
 
         dm.dmDisplayFrequency = targetHz;
-        dm.dmFields = DM_DISPLAYFREQUENCY;
+        dm.dmFields |= DM_DISPLAYFREQUENCY | DM_PELSWIDTH | DM_PELSHEIGHT;
 
         int res = ChangeDisplaySettingsEx(deviceName, ref dm, IntPtr.Zero, CDS_UPDATEREGISTRY, IntPtr.Zero);
+        if (res != DISP_CHANGE_SUCCESSFUL)
+        {
+            // Fallback to dynamic change without updating persistent registry if updating registry is restricted
+            res = ChangeDisplaySettingsEx(deviceName, ref dm, IntPtr.Zero, 0, IntPtr.Zero);
+        }
         return res == DISP_CHANGE_SUCCESSFUL;
     }
 }

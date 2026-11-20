@@ -1,6 +1,17 @@
 ## Build results
 [Bb]in/
 [Oo]bj/
+publish/
+dist/
+installer/Output/
+*.zip
+*.msi
+
+## Logs and diagnostics
+*.log
+fan_debug.log
+apu_probe_result.txt
+fan_probe_result.txt
 
 ## Visual Studio cache
 .vs/
@@ -9,3 +20,9 @@
 
 ## Temporary research decompilation
 research/decompiled/
+
+## OS metadata
+Thumbs.db
+[Ee]hthumbs.db
+Desktop.ini
+$RECYCLE.BIN/

@@ -38,6 +38,13 @@ else
     Console.WriteLine();
 }
 
+if (!GigabyteWmiMofRegistrar.EnsureRegistered())
+{
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.WriteLine("[!] ACPI WMI классы (GB_WMIACPI_*) не зарегистрированы в root\\WMI.");
+    Console.ResetColor();
+}
+
 var client = new GigabyteWmiClient();
 var ipcClient = new AEROCC.Core.Ipc.AeroccIpcClient();
 
@@ -71,10 +78,30 @@ else
     Console.ResetColor();
 }
 
+if (args.Any(a => a.Equals("--probe-fans", StringComparison.OrdinalIgnoreCase)))
+{
+    await RunFanControlProbeAsync(client);
+    return;
+}
+
+if (args.Any(a => a.Equals("--test-apu", StringComparison.OrdinalIgnoreCase)))
+{
+    await RunApuPowerProbeAsync(client);
+    return;
+}
+
+if (args.Any(a => a.Equals("--status", StringComparison.OrdinalIgnoreCase)))
+{
+    PowerManager.GetEnergyTelemetry();
+    await Task.Delay(350);
+    await DisplayCurrentStatusAsync(client, ipcClient);
+    return;
+}
+
 while (true)
 {
     PrintMenu();
-    Console.Write("\nВыберите действие [0-12]: ");
+    Console.Write("\nВыберите действие [0-13]: ");
     var key = Console.ReadLine()?.Trim();
 
     try
@@ -196,10 +223,15 @@ static async Task DisplayCurrentStatusAsync(GigabyteWmiClient client, AEROCC.Cor
     }
 
     Console.ForegroundColor = ConsoleColor.White;
-    Console.WriteLine($"  - Температура CPU:          {status.CpuTemperature} °C");
-    Console.WriteLine($"  - Вентилятор 1 (CPU):       {status.Fan1Rpm} RPM");
-    Console.WriteLine($"  - Вентилятор 2 (GPU):       {status.Fan2Rpm} RPM");
+    Console.WriteLine($"  - Температура CPU:          {FormatReading(status.CpuTemperature, "°C")}");
+    Console.WriteLine($"  - Мощность CPU (PKG RAPL):  {status.CpuPowerWatts?.ToString("F1") ?? "Н/Д"} Вт");
+    Console.WriteLine($"  - Вентилятор 1 (CPU):       {FormatReading(status.Fan1Rpm, "RPM")}");
+    Console.WriteLine($"  - Вентилятор 2 (GPU):       {FormatReading(status.Fan2Rpm, "RPM")}");
+    Console.WriteLine($"  - Питание / Батарея:        {(status.IsAcOnline ? "AC" : "DC")}" +
+        (status.BatteryDischargeWatts is > 0 ? $" | Разряд: -{status.BatteryDischargeWatts.Value:F1} Вт" :
+         status.BatteryChargeWatts is > 0 ? $" | Заряд: +{status.BatteryChargeWatts.Value:F1} Вт" : ""));
     Console.WriteLine($"  - Порог заряда аккумулятора:{status.BatteryChargeLimit}% (Policy: {status.BatteryPolicy})");
+    Console.WriteLine($"  - Энергосбережение Windows:  {(status.IsEnergySaverEnabled ? "Вкл" : "Выкл")}");
     Console.WriteLine($"  - WinKey заблокирована:     {FormatBool(status.WinKeyLocked)}");
     Console.WriteLine($"  - FnKey заблокирована:      {FormatBool(status.FnKeyLocked)}");
 
@@ -231,6 +263,9 @@ static async Task DisplayCurrentStatusAsync(GigabyteWmiClient client, AEROCC.Cor
 
     Console.ResetColor();
 }
+
+static string FormatReading(int? value, string unit) =>
+    value.HasValue ? $"{value.Value} {unit}" : "Нет данных";
 
 static string FormatBool(bool? val) => val switch
 {
@@ -310,20 +345,73 @@ static async Task TestFanProfileAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.
     }
 
     Console.WriteLine($"Активация профиля {profile.Value}...");
-    var ipcResp = await ipc.SetFanProfileAsync(profile.Value);
-    if (ipcResp.Success)
+    bool useService = ipc.IsServiceAvailable;
+    var response = useService ? await ipc.SetFanProfileAsync(profile.Value) : null;
+    bool ok = response?.Success ?? client.SetFanProfile(profile.Value);
+    if (!ok)
     {
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"[✓] Профиль {profile.Value} применен через фоновую службу!");
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"[!] Не удалось записать профиль {profile.Value}. Состояние EC неизвестно.");
+        if (response?.ErrorMessage is { } error)
+            Console.WriteLine(error);
         Console.ResetColor();
+        return;
     }
-    else
+
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine($"[✓] WMI принял запись профиля {profile.Value} ({(useService ? "через службу" : "прямой доступ")}).");
+    Console.ResetColor();
+
+    // Read the controller after the write, rather than reusing the service's cached status.
+    await Task.Delay(500);
+    int? ReadFanByte(string method) =>
+        int.TryParse(client.InvokeGetMethod(method)?.ToString(), out int val) && val is >= 0 and <= 255 ? val : null;
+
+    int? autoFan = ReadFanByte("GetAutoFanStatus");
+    int? fixedFan = ReadFanByte("GetFixedFanStatus");
+    int? stepFan = ReadFanByte("GetStepFanStatus");
+    int? nvThermal = ReadFanByte("getNvThermalTarget");
+    int? fixedSpeed = ReadFanByte("GetFixedFanSpeed");
+
+    Console.WriteLine($"  EC: AutoFan={autoFan?.ToString() ?? "Н/Д"}, FixedFan={fixedFan?.ToString() ?? "Н/Д"}, StepFan={stepFan?.ToString() ?? "Н/Д"}, NvThermal={nvThermal?.ToString() ?? "Н/Д"}, FixedSpeed={fixedSpeed?.ToString() ?? "Н/Д"}%");
+
+    (int Auto, int Fixed, int Step, int? NvThermal, int? FixedSpeed)? expected = profile switch
     {
-        client.SetFanProfile(profile.Value);
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"[✓] Профиль {profile.Value} применен напрямую через WMI!");
-        Console.ResetColor();
+        FanProfile.Eco => (0, 0, 0, 1, null),
+        FanProfile.Normal => (0, 0, 0, 0, null),
+        FanProfile.Game => (1, 0, 0, 0, null),
+        FanProfile.Turbo => (0, 1, 1, null, 100),
+        _ => null
+    };
+
+    if (expected is { } exp)
+    {
+        if (autoFan is null || fixedFan is null || stepFan is null)
+        {
+            Console.WriteLine($"  Проверка флагов {profile}: часть показаний недоступна.");
+        }
+        else
+        {
+            bool match = autoFan == exp.Auto && fixedFan == exp.Fixed && stepFan == exp.Step;
+            if (exp.NvThermal.HasValue && nvThermal.HasValue && nvThermal != exp.NvThermal) match = false;
+            if (exp.FixedSpeed.HasValue && fixedSpeed.HasValue && fixedSpeed != exp.FixedSpeed) match = false;
+
+            if (match)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"  [✓] Флаги EC совпали с ожидаемыми для {profile} (Auto={exp.Auto}, Fixed={exp.Fixed}, Step={exp.Step}).");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine($"  [!] Флаги EC отличаются от ожидаемых для {profile}: факт {autoFan}/{fixedFan}/{stepFan} (Nv={nvThermal}, Speed={fixedSpeed}), ожидалось {exp.Auto}/{exp.Fixed}/{exp.Step}.");
+                Console.ResetColor();
+            }
+        }
     }
+
+    Console.WriteLine($"  CPU: {FormatReading(client.GetCpuTemperature(), "°C")} | Fan 1: {FormatReading(client.GetFanRpm(1), "RPM")} | Fan 2: {FormatReading(client.GetFanRpm(2), "RPM")}");
 }
 
 static async Task TestWinKeyLockAsync(GigabyteWmiClient client, AEROCC.Core.Ipc.AeroccIpcClient ipc)
@@ -493,8 +581,9 @@ static async Task TestKeyboardBacklightAsync(GigabyteWmiClient client, AEROCC.Co
     Console.WriteLine(" 8. Статический цвет: Оранжевый (AERO Orange)");
     Console.WriteLine(" 9. Статический цвет: Красный (Red)");
     Console.WriteLine("10. Эффект: Дыхание (Breathing)");
-    Console.WriteLine("11. Эффект: Радуга / Неон (Neon)");
-    Console.WriteLine("12. Пользовательский цвет RGB (например, Бирюзовый / Фиолетовый)");
+    Console.WriteLine("11. Эффект: Бегущая радужная волна (Wave Rainbow)");
+    Console.WriteLine("12. Эффект: Радужный перелив (Neon Rainbow)");
+    Console.WriteLine("13. Пользовательский цвет RGB (например, Бирюзовый / Фиолетовый)");
     Console.Write("Выбор: ");
     var opt = Console.ReadLine()?.Trim();
 
@@ -531,9 +620,12 @@ static async Task TestKeyboardBacklightAsync(GigabyteWmiClient client, AEROCC.Co
             await SetEffect(KeyboardEffect.Breathing);
             break;
         case "11":
-            await SetEffect(KeyboardEffect.Neon);
+            await SetRainbow(KeyboardEffect.Wave);
             break;
         case "12":
+            await SetRainbow(KeyboardEffect.Neon);
+            break;
+        case "13":
             Console.Write("Введите Red (0-255): ");
             byte r = byte.TryParse(Console.ReadLine(), out var rv) ? rv : (byte)0;
             Console.Write("Введите Green (0-255): ");
@@ -581,6 +673,17 @@ static async Task TestKeyboardBacklightAsync(GigabyteWmiClient client, AEROCC.Co
         Console.WriteLine($"[✓] Эффект {effect} включен!");
         Console.ResetColor();
     }
+
+    async Task SetRainbow(KeyboardEffect effect)
+    {
+        string name = effect == KeyboardEffect.Wave ? "Бегущая радужная волна" : "Радужный перелив (Неон)";
+        Console.WriteLine($"Активация радуги: {name}...");
+        var resp = await ipc.SetBacklightFullAsync(effect, 100, KeyboardColor.Random, 5, 1);
+        if (!resp.Success) client.Keyboard.SetBacklight(effect, 100, KeyboardColor.Random, 5, 1);
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"[✓] {name} успешно включена!");
+        Console.ResetColor();
+    }
 }
 
 static void RunLiveMonitor(GigabyteWmiClient client)
@@ -591,9 +694,9 @@ static void RunLiveMonitor(GigabyteWmiClient client)
     {
         try
         {
-            int cpuTemp = client.GetCpuTemperature();
-            int fan1 = client.GetFanRpm(1);
-            int fan2 = client.GetFanRpm(2);
+            var cpuTemp = client.GetCpuTemperature();
+            var fan1 = client.GetFanRpm(1);
+            var fan2 = client.GetFanRpm(2);
             int battLimit = client.GetBatteryChargeLimit();
             var gpu = client.Gpu.GetTelemetry();
 
@@ -602,7 +705,7 @@ static void RunLiveMonitor(GigabyteWmiClient client)
                 : $"GPU: {gpu.PowerState}";
 
             Console.SetCursorPosition(0, 2);
-            Console.WriteLine($"[ {DateTime.Now:HH:mm:ss} ] CPU: {cpuTemp,2} °C | {gpuStr,-25} | Fan 1: {fan1,4} RPM | Fan 2: {fan2,4} RPM | Bat: {battLimit,3}%   ");
+            Console.WriteLine($"[ {DateTime.Now:HH:mm:ss} ] CPU: {FormatReading(cpuTemp, "°C"),-10} | {gpuStr,-25} | Fan 1: {FormatReading(fan1, "RPM"),-10} | Fan 2: {FormatReading(fan2, "RPM"),-10} | Bat: {battLimit,3}%   ");
         }
         catch (Exception ex)
         {
@@ -676,9 +779,9 @@ static async Task TestIpcServiceAsync(AEROCC.Core.Ipc.AeroccIpcClient ipc)
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine($"[✓] Ответ получен за {sw.ElapsedMilliseconds} мс!");
         Console.ResetColor();
-        Console.WriteLine($"  - CPU Temp:     {resp.Status.CpuTemperature} °C");
-        Console.WriteLine($"  - Fan 1 (CPU):  {resp.Status.Fan1Rpm} RPM");
-        Console.WriteLine($"  - Fan 2 (GPU):  {resp.Status.Fan2Rpm} RPM");
+        Console.WriteLine($"  - CPU Temp:     {FormatReading(resp.Status.CpuTemperature, "°C")}");
+        Console.WriteLine($"  - Fan 1 (CPU):  {FormatReading(resp.Status.Fan1Rpm, "RPM")}");
+        Console.WriteLine($"  - Fan 2 (GPU):  {FormatReading(resp.Status.Fan2Rpm, "RPM")}");
         Console.WriteLine($"  - Battery Limit:{resp.Status.BatteryChargeLimit}%");
         Console.WriteLine($"  - WinKey Lock:  {FormatBool(resp.Status.WinKeyLocked)}");
         Console.WriteLine($"  - FnKey Lock:   {FormatBool(resp.Status.FnKeyLocked)}");
@@ -871,6 +974,7 @@ static async Task TestHotKeySnifferAsync(GigabyteWmiClient client, AEROCC.Core.I
         {
             desc = bytes[3] switch
             {
+                145 => " -> GiMATE Hardware Button (0x91)",
                 146 => " -> F4: Microphone Mute (0x92)",
                 132 => " -> F7: Fan Profile / Performance (0x84)",
                 129 => " -> F9: Touchpad Toggle (0x81)",
@@ -1007,6 +1111,365 @@ static async Task TestHotKeySnifferAsync(GigabyteWmiClient client, AEROCC.Core.I
         mgr.BacklightCycleTriggered -= OnBacklight;
         mgr.Stop();
         Console.WriteLine("\nСниффер остановлен.");
+    }
+}
+
+static async Task RunApuPowerProbeAsync(GigabyteWmiClient client)
+{
+    string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "apu_probe_result.txt");
+    var sb = new StringBuilder();
+
+    void Log(string line)
+    {
+        string tsLine = $"[{DateTime.Now:HH:mm:ss.fff}] {line}";
+        Console.WriteLine(tsLine);
+        sb.AppendLine(tsLine);
+    }
+
+    var initialTemp = client.GetCpuTemperature();
+    if (initialTemp is null || client.GetFanRpm(1) is null || client.GetFanRpm(2) is null)
+    {
+        Log("[!] SAFETY ABORT: CPU temperature or fan RPM unavailable.");
+        return;
+    }
+
+    PowerManager.GetEnergyTelemetry();
+    await Task.Delay(350);
+    var initTelemetry = PowerManager.GetEnergyTelemetry();
+    bool initialEnergySaver = PowerManager.GetEnergySaverEnabled();
+    if (initialEnergySaver)
+    {
+        PowerManager.SetEnergySaverEnabled(false);
+        await Task.Delay(250);
+    }
+    Log($"=== AEROCC APU POWER LIMIT PROBE START === AC={initTelemetry.IsAcOnline}, InitialES={initialEnergySaver}, ProbeES={PowerManager.GetEnergySaverEnabled()}, Temp={initialTemp}C, IdlePKG={initTelemetry.CpuPackageWatts?.ToString("F1") ?? "n/a"}W");
+
+    using var loadCts = new CancellationTokenSource();
+    var loadThreads = new List<Thread>();
+    int threads = Math.Max(1, Environment.ProcessorCount);
+
+    void StartCpuLoad()
+    {
+        for (int i = 0; i < threads; i++)
+        {
+            int threadIndex = i;
+            var worker = new Thread(() =>
+            {
+                double x = 1.000123 + threadIndex;
+                while (!loadCts.Token.IsCancellationRequested)
+                {
+                    for (int k = 0; k < 50000; k++)
+                    {
+                        x = Math.Sqrt(x * x + 1.234567) * 0.9999991 + 0.00001;
+                        if (x > 1e6) x = 1.0001;
+                    }
+                }
+            })
+            {
+                IsBackground = true,
+                Priority = ThreadPriority.BelowNormal,
+                Name = $"ApuProbeLoad_{threadIndex}"
+            };
+            worker.Start();
+            loadThreads.Add(worker);
+        }
+    }
+
+    async Task RunPhaseAsync(string name, Func<(bool Ok, string Details)> applyFn, int seconds)
+    {
+        var (ok, details) = applyFn();
+        Log($"--- PHASE {name} ({details}) ---");
+        if (!ok)
+        {
+            Log($"[!] SAFETY ABORT in {name}: WMI write failed.");
+            loadCts.Cancel();
+            return;
+        }
+
+        var samples = new List<double>();
+        int hotCount = 0;
+
+        for (int sec = 1; sec <= seconds; sec++)
+        {
+            await Task.Delay(1000);
+            var tel = PowerManager.GetEnergyTelemetry();
+            var temp = client.GetCpuTemperature();
+            var f1 = client.GetFanRpm(1);
+            var f2 = client.GetFanRpm(2);
+            if (temp is null || f1 is null || f2 is null)
+            {
+                Log($"[!] SAFETY ABORT in {name}: CPU temperature or fan RPM unavailable.");
+                loadCts.Cancel();
+                break;
+            }
+
+            double? pkg = tel.CpuPackageWatts;
+            if (pkg.HasValue) samples.Add(pkg.Value);
+
+            Log($"  [{name} t={sec:00}s] PKG={pkg?.ToString("F1") ?? "n/a"}W | Temp={temp}C | F1={f1} | F2={f2}");
+
+            if (temp >= 92) hotCount++;
+            else hotCount = 0;
+
+            if (hotCount >= 2)
+            {
+                Log($"[!] SAFETY ABORT in {name}: CPU Temp >= 92C for 2 samples!");
+                loadCts.Cancel();
+                break;
+            }
+        }
+
+        if (samples.Count >= 4)
+        {
+            var burst = samples.Take(Math.Min(4, samples.Count)).ToList();
+            var steady = samples.Skip(samples.Count / 2).ToList();
+            Log($"  => SUMMARY {name}: BurstMax={burst.Max():F1}W | SteadyAvg={steady.Average():F1}W (Min={steady.Min():F1}W, Max={steady.Max():F1}W)");
+        }
+    }
+
+    try
+    {
+        // Pre-spin fans before starting full multi-core load so the heatsink stays cool on AC
+        if (!client.SetFanProfile(FanProfile.Turbo))
+        {
+            Log("[!] SAFETY ABORT: Turbo fan profile write failed.");
+            return;
+        }
+        Log("Pre-spinning Turbo fans (3s) before starting load...");
+        await Task.Delay(3000);
+
+        if (client.GetCpuTemperature() is not (< 92)
+            || client.GetFanRpm(1) is not (> 0) || client.GetFanRpm(2) is not (> 0))
+        {
+            Log("[!] SAFETY ABORT: Fresh temperature and both running fans are required before starting load.");
+            return;
+        }
+
+        StartCpuLoad();
+        Log($"Started {threads} BelowNormal dedicated CPU load threads.");
+
+        await RunPhaseAsync("P1_BASELINE_TURBO", () =>
+        {
+            bool ok = client.SetFanProfile(FanProfile.Turbo);
+            return (ok, $"SetFanProfile(Turbo)={ok}");
+        }, 10);
+
+        if (!loadCts.IsCancellationRequested)
+        {
+            await RunPhaseAsync("P2_DOUBLE_18_18_18", () =>
+            {
+                bool ok = client.SetApuPower(18, 18, 18);
+                return (ok, $"SetApuPower(18,18,18 double)={ok}");
+            }, 10);
+        }
+
+        if (!loadCts.IsCancellationRequested)
+        {
+            await RunPhaseAsync("P3_UINT_P1_22_P2_45_P3_65", () =>
+            {
+                bool r1 = client.InvokeSetMethod("SetApuParameter1", ("Data", 22000u));
+                bool r2 = client.InvokeSetMethod("SetApuParameter2", ("Data", 45000u));
+                bool r3 = client.InvokeSetMethod("SetApuParameter3", ("Data", 65000u));
+                return (r1 && r2 && r3, $"P1=22u:{r1}, P2=45u:{r2}, P3=65u:{r3}");
+            }, 12);
+        }
+
+        if (!loadCts.IsCancellationRequested)
+        {
+            await RunPhaseAsync("P4_UINT_P1_65_P2_45_P3_22", () =>
+            {
+                bool r1 = client.InvokeSetMethod("SetApuParameter1", ("Data", 65000u));
+                bool r2 = client.InvokeSetMethod("SetApuParameter2", ("Data", 45000u));
+                bool r3 = client.InvokeSetMethod("SetApuParameter3", ("Data", 22000u));
+                return (r1 && r2 && r3, $"P1=65u:{r1}, P2=45u:{r2}, P3=22u:{r3}");
+            }, 12);
+        }
+
+        if (!loadCts.IsCancellationRequested)
+        {
+            await RunPhaseAsync("P5_UINT_45_55_65", () =>
+            {
+                bool r1 = client.InvokeSetMethod("SetApuParameter1", ("Data", 45000u));
+                bool r2 = client.InvokeSetMethod("SetApuParameter2", ("Data", 55000u));
+                bool r3 = client.InvokeSetMethod("SetApuParameter3", ("Data", 65000u));
+                return (r1 && r2 && r3, $"P1=45u:{r1}, P2=55u:{r2}, P3=65u:{r3}");
+            }, 10);
+        }
+
+        if (!loadCts.IsCancellationRequested)
+        {
+            await RunPhaseAsync("P6A_PRE_OVERWRITE_18W", () =>
+            {
+                bool ok = client.SetApuPower(18, 18, 18);
+                return (ok, $"SetApuPower(18,18,18)={ok}");
+            }, 6);
+        }
+
+        if (!loadCts.IsCancellationRequested)
+        {
+            await RunPhaseAsync("P6B_OVERWRITE_BY_FAN_TURBO", () =>
+            {
+                bool ok = client.SetFanProfile(FanProfile.Turbo);
+                return (ok, $"SetFanProfile(Turbo)={ok}");
+            }, 8);
+        }
+    }
+    finally
+    {
+        loadCts.Cancel();
+        foreach (var t in loadThreads)
+        {
+            try { t.Join(500); } catch { }
+        }
+
+        // Clear test APU limits from persistence and restore standard OEM operating power
+        client.ClearCustomApuLimits();
+        client.InvokeSetMethod("SetApuParameter1", ("Data", 65000u));
+        client.InvokeSetMethod("SetApuParameter2", ("Data", 54000u));
+        client.InvokeSetMethod("SetApuParameter3", ("Data", 45000u));
+
+        bool restored = client.SetFanProfile(FanProfile.Normal);
+        if (initialEnergySaver) PowerManager.SetEnergySaverEnabled(true);
+        await Task.Delay(1000);
+        Log($"--- SetFanProfile(Normal)={restored}, CustomLimitsCleared=true, ES={PowerManager.GetEnergySaverEnabled()}, Temp={client.GetCpuTemperature()}C ---");
+        File.WriteAllText(logPath, sb.ToString(), Encoding.UTF8);
+        Log($"Probe log saved to: {logPath}");
+    }
+}
+
+static async Task RunFanControlProbeAsync(GigabyteWmiClient client)
+{
+    string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "fan_probe_result.txt");
+    var sb = new StringBuilder();
+
+    void Log(string msg)
+    {
+        string line = $"[{DateTime.Now:HH:mm:ss.fff}] {msg}";
+        Console.WriteLine(line);
+        sb.AppendLine(line);
+    }
+
+    void DumpState(string tag)
+    {
+        var cpuT = client.GetCpuTemperature();
+        var r1 = client.GetFanRpm(1);
+        var r2 = client.GetFanRpm(2);
+        var cpuDuty = client.InvokeGetMethod("GetCPUFanDuty");
+        var gpuDuty = client.InvokeGetMethod("GetGPUFanDuty");
+        var autoSt = client.InvokeGetMethod("GetAutoFanStatus");
+        var fixSt = client.InvokeGetMethod("GetFixedFanStatus");
+        var fixSpd = client.InvokeGetMethod("GetFixedFanSpeed");
+        var stepSt = client.InvokeGetMethod("GetStepFanStatus");
+        var adjSt = client.InvokeGetMethod("GetFanAdjustStatus");
+        var nvTgt = client.InvokeGetMethod("getNvThermalTarget");
+        var nvOp = client.InvokeGetMethod("GetNvPowerConfigOperationStatus");
+        var peg = client.InvokeGetMethod("GetPEG2orSG2");
+        Log($"[{tag}] T={cpuT}C RPM=({r1},{r2}) Duty=({cpuDuty},{gpuDuty}) Auto={autoSt} Fixed={fixSt} FixSpd={fixSpd} Step={stepSt} Adj={adjSt} NvTgt={nvTgt} NvOp={nvOp} PEG={peg}");
+    }
+
+    int? ToInt(object? val) => val == null ? null : Convert.ToInt32(val);
+
+    bool WatchdogTripped(string tag, int r1, int r2, int? cd, int? gd, int maxDuty = 65, int maxRpm = 3900)
+    {
+        if (r1 > maxRpm || r2 > maxRpm || (cd.HasValue && cd.Value > maxDuty) || (gd.HasValue && gd.Value > maxDuty))
+        {
+            Log($"  [WATCHDOG ABORT @ {tag}] r=({r1},{r2}) d=({cd},{gd}) > limit(d={maxDuty}, rpm={maxRpm}) -> restoring Normal!");
+            client.SetFanFixedStatus(false);
+            client.SetStepFanStatus(false);
+            client.SetFanAdjustStatus(0);
+            client.SetFanProfile(FanProfile.Normal);
+            return true;
+        }
+        return false;
+    }
+
+    async Task<bool> SampleFastAsync(string stepName, int samples, int delayMs = 400, int maxDuty = 65, int maxRpm = 3900)
+    {
+        for (int i = 0; i < samples; i++)
+        {
+            await Task.Delay(delayMs);
+            var r1 = client.GetFanRpm(1);
+            var r2 = client.GetFanRpm(2);
+            int? cd = ToInt(client.InvokeGetMethod("GetCPUFanDuty"));
+            int? gd = ToInt(client.InvokeGetMethod("GetGPUFanDuty"));
+            var cpuT = client.GetCpuTemperature();
+            Log($"  +{(i + 1) * delayMs}ms [{stepName}] T={cpuT}C RPM=({r1},{r2}) Duty=({cd},{gd})");
+            if (cpuT is null || r1 is null || r2 is null)
+            {
+                Log($"[!] SAFETY ABORT in {stepName}: CPU temperature or fan RPM unavailable.");
+                return false;
+            }
+            if (WatchdogTripped(stepName, r1.Value, r2.Value, cd, gd, maxDuty, maxRpm))
+                return false;
+        }
+        return true;
+    }
+
+    Log("=== AEROCC EG61VH Fan & GPU EC Probe Round 3 (Fast Watchdog) Started ===");
+    Log($"IsAdmin={GigabyteWmiClient.IsAdministrator()}");
+
+    if (client.GetCpuTemperature() is null || client.GetFanRpm(1) is null || client.GetFanRpm(2) is null)
+    {
+        Log("[!] SAFETY ABORT: CPU temperature or fan RPM unavailable.");
+        return;
+    }
+
+    try
+    {
+        DumpState("INITIAL");
+
+        // Test E1: Step=1 + SetCurrentFanStep(5) (never tested together before)
+        Log("--- Test E1: Notify(5), Fixed=0, Step=1, Auto=0, SetCurrentFanStep(5) ---");
+        client.SendPfmNotify(5);
+        client.SetFanFixedStatus(false);
+        client.SetStepFanStatus(true);
+        client.SetAutoFanStatus(false);
+        client.SetCurrentFanStep(5);
+        if (!await SampleFastAsync("StepLvl5", 4, 350, maxDuty: 65, maxRpm: 3900))
+            return;
+        DumpState("AFTER_StepLvl5");
+
+        // Test E2: Step=1 + Fixed=1 (SetFanMax sequence) with 45% preloaded and Notify(5)
+        Log("--- Test E2: Notify(5) + Auto=0 + FixedSpeed=45, Cpu=45, Gpu=45 + Step=1 + Fixed=1 ---");
+        client.SetAutoFanStatus(false);
+        client.SetNvThermalTarget(0);
+        client.SetFixedFanSpeed(45);
+        client.SetCpuFanDuty(45);
+        client.SetGpuFanDuty(45);
+        client.SetStepFanStatus(true);
+        client.SetFanFixedStatus(true);
+        bool e2Safe = await SampleFastAsync("Step1Fixed45_N5", 10, 200, maxDuty: 62, maxRpm: 3600);
+        DumpState("AFTER_E2");
+
+        // Test E3: Exact SetFanMax Notify(3) + Step=1 + Fixed=1, but with 45% preloaded instead of 100%!
+        if (e2Safe)
+        {
+            Log("--- Test E3: Notify(3) + Auto=0 + FixedSpeed=45, Cpu=45, Gpu=45 + Step=1 + Fixed=1 ---");
+            client.SendPfmNotify(3);
+            client.SetAutoFanStatus(false);
+            client.SetNvThermalTarget(0);
+            client.SetFixedFanSpeed(45);
+            client.SetCpuFanDuty(45);
+            client.SetGpuFanDuty(45);
+            client.SetStepFanStatus(true);
+            client.SetFanFixedStatus(true);
+            await SampleFastAsync("Step1Fixed45_N3", 10, 200, maxDuty: 62, maxRpm: 3600);
+            DumpState("AFTER_E3");
+        }
+    }
+    finally
+    {
+        Log("--- Restoring Normal/Auto Fan Control ---");
+        client.SetFanFixedStatus(false);
+        client.SetStepFanStatus(false);
+        client.SetFixedFanSpeed(100);
+        client.SetCpuFanDuty(0);
+        client.SetGpuFanDuty(0);
+        bool restored = client.SetFanProfile(FanProfile.Normal);
+        await Task.Delay(1200);
+        DumpState(restored ? "NORMAL_WRITE_OK" : "NORMAL_WRITE_FAILED");
+        File.WriteAllText(logPath, sb.ToString(), Encoding.UTF8);
+        Log($"Probe log saved to: {logPath}");
     }
 }
 

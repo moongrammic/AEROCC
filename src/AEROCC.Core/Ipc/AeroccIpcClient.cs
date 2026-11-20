@@ -9,7 +9,7 @@ public class AeroccIpcClient
 {
     public bool IsServiceAvailable { get; private set; }
 
-    public async Task<IpcResponse> SendCommandAsync(IpcMessage request, int timeoutMs = 120, CancellationToken ct = default)
+    public async Task<IpcResponse> SendCommandAsync(IpcMessage request, int timeoutMs = 800, CancellationToken ct = default)
     {
         try
         {
@@ -24,19 +24,45 @@ public class AeroccIpcClient
             await pipe.FlushAsync(ct);
 
             using var reader = new StreamReader(pipe, Encoding.UTF8);
-            var responseLine = await reader.ReadLineAsync(ct);
+            using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            readCts.CancelAfter(timeoutMs + 2000);
+
+            var responseLine = await reader.ReadLineAsync(readCts.Token);
             if (string.IsNullOrWhiteSpace(responseLine))
             {
                 return new IpcResponse { Success = false, ErrorMessage = "Пустой ответ от фоновой службы." };
             }
 
             var resp = JsonSerializer.Deserialize<IpcResponse>(responseLine);
+            if (resp?.Status is { } status)
+            {
+                if (status.ThermalSampledAtUtc is null)
+                {
+                    // Older services use zero for failed reads and omit the sample time.
+                    resp.Status = status with
+                    {
+                        CpuTemperature = status.CpuTemperature is > 0 ? status.CpuTemperature : null,
+                        Fan1Rpm = status.Fan1Rpm is > 0 ? status.Fan1Rpm : null,
+                        Fan2Rpm = status.Fan2Rpm is > 0 ? status.Fan2Rpm : null
+                    };
+                }
+                else if (!status.HasFreshThermalSample())
+                {
+                    resp.Status = status with { CpuTemperature = null, Fan1Rpm = null, Fan2Rpm = null };
+                }
+            }
+
             return resp ?? new IpcResponse { Success = false, ErrorMessage = "Не удалось десериализовать ответ службы." };
         }
         catch (TimeoutException)
         {
             IsServiceAvailable = false;
             return new IpcResponse { Success = false, ErrorMessage = "Таймаут подключения. Служба AEROCC не запущена." };
+        }
+        catch (OperationCanceledException)
+        {
+            IsServiceAvailable = false;
+            return new IpcResponse { Success = false, ErrorMessage = "Таймаут ожидания ответа службы." };
         }
         catch (IOException)
         {
@@ -51,7 +77,7 @@ public class AeroccIpcClient
     }
 
     public Task<IpcResponse> GetStatusAsync(CancellationToken ct = default) =>
-        SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdGetStatus }, timeoutMs: 120, ct: ct);
+        SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdGetStatus }, timeoutMs: 800, ct: ct);
 
     public Task<IpcResponse> SetBatteryLimitAsync(int percent, CancellationToken ct = default) =>
         SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetBatteryLimit, Payload = percent.ToString() }, ct: ct);
@@ -76,6 +102,9 @@ public class AeroccIpcClient
 
     public Task<IpcResponse> SetBacklightEffectAsync(KeyboardEffect effect, CancellationToken ct = default) =>
         SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetBacklightEffect, Payload = ((byte)effect).ToString() }, ct: ct);
+
+    public Task<IpcResponse> SetBacklightFullAsync(KeyboardEffect effect, byte brightness, KeyboardColor color, byte speed, byte direction, CancellationToken ct = default) =>
+        SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetBacklightFull, Payload = $"{(byte)effect},{brightness},{(byte)color},{speed},{direction}" }, ct: ct);
 
     public Task<IpcResponse> SetCustomRgbAsync(byte r, byte g, byte b, byte brightness = 100, CancellationToken ct = default) =>
         SendCommandAsync(new IpcMessage { Command = IpcConstants.CmdSetCustomRgb, Payload = $"{r},{g},{b},{brightness}" }, ct: ct);

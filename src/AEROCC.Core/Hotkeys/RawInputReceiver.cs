@@ -190,9 +190,11 @@ public class RawInputReceiver : IDisposable
     private long _lastFnLockTick = 0;
     private long _lastWinLockTick = 0;
     private long _lastAirplaneTick = 0;
+    private long _lastGimateTick = 0;
 
     public event EventHandler<RawInputEventArgs>? RawInputReceived;
     public event Action<byte[]>? VendorHidReportReceived;
+    public event Action? GimateHotkeyPressed;
     public event Action? MicMuteHotkeyPressed;
     public event Action? PerformanceHotkeyPressed;
     public event Action? TouchpadHotkeyPressed;
@@ -207,7 +209,7 @@ public class RawInputReceiver : IDisposable
     {
         if (_isStarted) return;
 
-        var readyEvent = new ManualResetEventSlim(false);
+        using var readyEvent = new ManualResetEventSlim(false);
 
         _msgThread = new Thread(() =>
         {
@@ -326,97 +328,124 @@ public class RawInputReceiver : IDisposable
 
                     if (header.dwType == RIM_TYPEHID)
                     {
-                        // HID report from ITE EC or vendor device
-                        // In Gigabyte GCC (HotKeyManagerWpf / NB_Controler):
-                        // num = buffer.Data.Keyboard.VKey
-                        // num2 = buffer.Data.Keyboard.Makecode
-                        // num4 = buffer.Data.Keyboard.Message
-                        IntPtr kbPtr = IntPtr.Add(pBuffer, dataOffset);
-                        var kb = Marshal.PtrToStructure<RAWINPUTKEYBOARD>(kbPtr);
-
-                        byte[] bytes = BitConverter.GetBytes(kb.Message);
-                        VendorHidReportReceived?.Invoke(bytes);
-
-                        var args = new RawInputEventArgs(header.dwType, bytes, kb.MakeCode, kb.VKey, kb.Message);
-                        RawInputReceived?.Invoke(this, args);
-
-                        // Gigabyte ITE Hotkey pattern: bytes[0] == 4 && bytes[1] == 0
-                        if (bytes.Length >= 4 && bytes[0] == 4 && bytes[1] == 0)
+                        // HID report from ITE EC or vendor device.
+                        // Validate header and payload boundaries before reading.
+                        if (size >= dataOffset + 8)
                         {
-                            byte code = bytes[3];
-                            long now = Environment.TickCount64;
+                            uint dwSizeHid = (uint)Marshal.ReadInt32(pBuffer, dataOffset);
+                            uint dwCount = (uint)Marshal.ReadInt32(pBuffer, dataOffset + 4);
+                            long totalExpected = (long)dwSizeHid * dwCount;
 
-                            switch (code)
+                            int availablePayload = (int)(size - dataOffset - 8);
+                            if (availablePayload > 0)
                             {
-                                case 146: // 0x92: Microphone Mute Toggle (Fn + F4)
-                                    if (now - _lastMicMuteTick > 300)
-                                    {
-                                        _lastMicMuteTick = now;
-                                        ThreadPool.QueueUserWorkItem(_ => MicMuteHotkeyPressed?.Invoke());
-                                    }
-                                    break;
+                                int payloadLength = totalExpected > 0 && totalExpected <= availablePayload
+                                    ? (int)totalExpected
+                                    : availablePayload;
 
-                                case 132: // 0x84: Fan Profile / Performance Cycle (Fn + F7)
-                                    if (now - _lastPerfTick > 300)
-                                    {
-                                        _lastPerfTick = now;
-                                        ThreadPool.QueueUserWorkItem(_ => PerformanceHotkeyPressed?.Invoke());
-                                    }
-                                    break;
+                                byte[] bytes = new byte[payloadLength];
+                                Marshal.Copy(IntPtr.Add(pBuffer, dataOffset + 8), bytes, 0, payloadLength);
 
-                                case 129: // 0x81: Touchpad Toggle (Fn + F9)
-                                    if (now - _lastTouchpadTick > 300)
-                                    {
-                                        _lastTouchpadTick = now;
-                                        ThreadPool.QueueUserWorkItem(_ => TouchpadHotkeyPressed?.Invoke());
-                                    }
-                                    break;
+                                VendorHidReportReceived?.Invoke(bytes);
 
-                                case 148: // 0x94: WinLock Toggle (Fn + Win)
-                                    if (now - _lastWinLockTick > 300)
-                                    {
-                                        _lastWinLockTick = now;
-                                        ThreadPool.QueueUserWorkItem(_ => WinLockHotkeyPressed?.Invoke());
-                                    }
-                                    break;
+                                uint messageVal = bytes.Length >= 4 ? BitConverter.ToUInt32(bytes, 0) : 0;
+                                ushort makeCodeVal = (ushort)(dwSizeHid & 0xFFFF);
+                                ushort vkeyVal = (ushort)(dwCount & 0xFFFF);
 
-                                case 149: // 0x95: FnLock Toggle (Fn + Esc)
-                                    if (now - _lastFnLockTick > 300)
-                                    {
-                                        _lastFnLockTick = now;
-                                        ThreadPool.QueueUserWorkItem(_ => FnLockHotkeyPressed?.Invoke());
-                                    }
-                                    break;
+                                var args = new RawInputEventArgs(header.dwType, bytes, makeCodeVal, vkeyVal, messageVal);
+                                RawInputReceived?.Invoke(this, args);
 
-                                case 150: // 0x96 or 154 (0x9A): Backlight cycle
-                                case 154:
-                                    if (now - _lastBacklightTick > 300)
-                                    {
-                                        _lastBacklightTick = now;
-                                        ThreadPool.QueueUserWorkItem(_ => BacklightHotkeyPressed?.Invoke());
-                                    }
-                                    break;
+                                // Gigabyte ITE Hotkey pattern: bytes[0] == 4 && bytes[1] == 0
+                                if (bytes.Length >= 4 && bytes[0] == 4 && bytes[1] == 0)
+                                {
+                                    byte code = bytes[3];
+                                    long now = Environment.TickCount64;
 
-                                case 130: // 0x82 / 0x85: Airplane mode
-                                case 133:
-                                case 138:
-                                    if (now - _lastAirplaneTick > 300)
+                                    switch (code)
                                     {
-                                        _lastAirplaneTick = now;
-                                        ThreadPool.QueueUserWorkItem(_ => AirplaneHotkeyPressed?.Invoke());
+                                        case 145: // 0x91: GiMATE Hardware Button
+                                            if (now - _lastGimateTick > 300)
+                                            {
+                                                _lastGimateTick = now;
+                                                ThreadPool.QueueUserWorkItem(_ => GimateHotkeyPressed?.Invoke());
+                                            }
+                                            break;
+
+                                        case 146: // 0x92: Microphone Mute Toggle (Fn + F4)
+                                            if (now - _lastMicMuteTick > 300)
+                                            {
+                                                _lastMicMuteTick = now;
+                                                ThreadPool.QueueUserWorkItem(_ => MicMuteHotkeyPressed?.Invoke());
+                                            }
+                                            break;
+
+                                        case 132: // 0x84: Fan Profile / Performance Cycle (Fn + F7)
+                                            if (now - _lastPerfTick > 300)
+                                            {
+                                                _lastPerfTick = now;
+                                                ThreadPool.QueueUserWorkItem(_ => PerformanceHotkeyPressed?.Invoke());
+                                            }
+                                            break;
+
+                                        case 129: // 0x81: Touchpad Toggle (Fn + F9)
+                                            if (now - _lastTouchpadTick > 300)
+                                            {
+                                                _lastTouchpadTick = now;
+                                                ThreadPool.QueueUserWorkItem(_ => TouchpadHotkeyPressed?.Invoke());
+                                            }
+                                            break;
+
+                                        case 148: // 0x94: WinLock Toggle (Fn + Win)
+                                            if (now - _lastWinLockTick > 300)
+                                            {
+                                                _lastWinLockTick = now;
+                                                ThreadPool.QueueUserWorkItem(_ => WinLockHotkeyPressed?.Invoke());
+                                            }
+                                            break;
+
+                                        case 149: // 0x95: FnLock Toggle (Fn + Esc)
+                                            if (now - _lastFnLockTick > 300)
+                                            {
+                                                _lastFnLockTick = now;
+                                                ThreadPool.QueueUserWorkItem(_ => FnLockHotkeyPressed?.Invoke());
+                                            }
+                                            break;
+
+                                        case 150: // 0x96 or 154 (0x9A): Backlight cycle
+                                        case 154:
+                                            if (now - _lastBacklightTick > 300)
+                                            {
+                                                _lastBacklightTick = now;
+                                                ThreadPool.QueueUserWorkItem(_ => BacklightHotkeyPressed?.Invoke());
+                                            }
+                                            break;
+
+                                        case 130: // 0x82 / 0x85: Airplane mode
+                                        case 133:
+                                        case 138:
+                                            if (now - _lastAirplaneTick > 300)
+                                            {
+                                                _lastAirplaneTick = now;
+                                                ThreadPool.QueueUserWorkItem(_ => AirplaneHotkeyPressed?.Invoke());
+                                            }
+                                            break;
                                     }
-                                    break;
+                                }
                             }
                         }
                     }
                     else if (header.dwType == RIM_TYPEKEYBOARD)
                     {
-                        IntPtr kbPtr = IntPtr.Add(pBuffer, dataOffset);
-                        var kb = Marshal.PtrToStructure<RAWINPUTKEYBOARD>(kbPtr);
+                        int minKeyboardSize = dataOffset + Marshal.SizeOf<RAWINPUTKEYBOARD>();
+                        if (size >= minKeyboardSize)
+                        {
+                            IntPtr kbPtr = IntPtr.Add(pBuffer, dataOffset);
+                            var kb = Marshal.PtrToStructure<RAWINPUTKEYBOARD>(kbPtr);
 
-                        byte[] data = BitConverter.GetBytes(kb.Message);
-                        var args = new RawInputEventArgs(header.dwType, data, kb.MakeCode, kb.VKey, kb.Message);
-                        RawInputReceived?.Invoke(this, args);
+                            byte[] data = BitConverter.GetBytes(kb.Message);
+                            var args = new RawInputEventArgs(header.dwType, data, kb.MakeCode, kb.VKey, kb.Message);
+                            RawInputReceived?.Invoke(this, args);
+                        }
                     }
                 }
             }

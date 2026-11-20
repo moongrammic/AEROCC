@@ -24,6 +24,11 @@ public class HardwareService : IHostedService, IDisposable
     {
         _logger.LogInformation("AEROCC Background Service starting...");
 
+        if (!GigabyteWmiMofRegistrar.EnsureRegistered())
+        {
+            _logger.LogWarning("ACPI WMI schema (GB_WMIACPI_*) could not be verified or registered on startup.");
+        }
+
         // Arm the Watchdog
         _logger.LogInformation("[Watchdog] Initialized. Fans will auto-revert to BIOS on service shutdown.");
 
@@ -92,12 +97,12 @@ public class HardwareService : IHostedService, IDisposable
         try
         {
             _logger.LogInformation("[Watchdog Triggered] Restoring fans to BIOS Auto control...");
-            _wmiClient.SetFanFixedStatus(false);
-            _wmiClient.SetStepFanStatus(false);
-            _wmiClient.SetAutoFanStatus(false);
-            _wmiClient.SendPfmNotify(1); // Normal profile
-            _wmiClient.SetNvThermalTarget(0);
-            _logger.LogInformation("[Watchdog] Fans successfully reverted to BIOS Auto.");
+            _wmiClient.ClearCustomApuLimits();
+            bool restored = _wmiClient.SetFanProfile(FanProfile.Normal);
+            if (restored)
+                _logger.LogInformation("[Watchdog] WMI accepted all BIOS Auto restore writes.");
+            else
+                _logger.LogWarning("[Watchdog] A BIOS Auto restore write failed. Fan control state is unknown.");
         }
         catch (Exception ex)
         {
@@ -109,7 +114,8 @@ public class HardwareService : IHostedService, IDisposable
     {
         _workerCts?.Cancel();
         _workerCts?.Dispose();
-        _ipcServer?.Stop();
+        _ipcServer?.Dispose();
+        _wmiClient.Dispose();
         GC.SuppressFinalize(this);
     }
 }

@@ -20,7 +20,11 @@ public static class IpcConstants
     public const string CmdSetBacklightBrightness = "SetBacklightBrightness";
     public const string CmdSetBacklightEffect = "SetBacklightEffect";
     public const string CmdSetBacklightColor = "SetBacklightColor";
+    public const string CmdSetBacklightFull = "SetBacklightFull";
     public const string CmdSetCustomRgb = "SetCustomRgb";
+
+    // Fan Curve
+    public const string CmdSetFanCurvePoint = "SetFanCurvePoint";
 
     // GPU Control
     public const string CmdSetGpuPowerMode = "SetGpuPowerMode";

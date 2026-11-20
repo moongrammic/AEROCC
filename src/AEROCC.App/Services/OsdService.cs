@@ -14,18 +14,45 @@ public class OsdService
 
     public void Initialize()
     {
+        var app = System.Windows.Application.Current;
+        if (app == null) return;
+
+        if (!app.Dispatcher.CheckAccess())
+        {
+            app.Dispatcher.Invoke(Initialize);
+            return;
+        }
+
         if (_window == null)
         {
             _window = new OsdWindow();
         }
     }
 
+    private void PostNotification(string title, string message, SymbolRegular symbol, Color accentColor)
+    {
+        var app = System.Windows.Application.Current;
+        if (app == null) return;
+
+        if (!app.Dispatcher.CheckAccess())
+        {
+            app.Dispatcher.BeginInvoke(() => PostNotification(title, message, symbol, accentColor));
+            return;
+        }
+
+        if (_window == null)
+        {
+            _window = new OsdWindow();
+        }
+
+        _window.ShowNotification(title, message, symbol, accentColor);
+    }
+
     public void ShowWinLock(bool locked)
     {
-        Initialize();
         if (locked)
         {
-            _window?.ShowNotification(
+            PostNotification(
                 "Клавиша Win",
                 "Заблокирована (Игровой режим)",
                 SymbolRegular.LockClosed24,
@@ -33,7 +60,7 @@ public class OsdService
         }
         else
         {
-            _window?.ShowNotification(
+            PostNotification(
                 "Клавиша Win",
                 "Разблокирована",
                 SymbolRegular.LockOpen24,
@@ -43,10 +70,9 @@ public class OsdService
 
     public void ShowFnLock(bool locked)
     {
-        Initialize();
         if (locked)
         {
-            _window?.ShowNotification(
+            PostNotification(
                 "Режим клавиш (Fn + Esc)",
                 "Мультимедиа (Громкость, яркость)",
                 SymbolRegular.Speaker224,
@@ -54,7 +80,7 @@ public class OsdService
         }
         else
         {
-            _window?.ShowNotification(
+            PostNotification(
                 "Режим клавиш (Fn + Esc)",
                 "Стандартные F1–F12 (Обычный режим)",
                 SymbolRegular.Keyboard24,
@@ -64,7 +90,6 @@ public class OsdService
 
     public void ShowFanProfile(FanProfile profile)
     {
-        Initialize();
         var (name, color, symbol) = profile switch
         {
             FanProfile.Eco => ("Eco (Тихий)", Color.FromRgb(46, 229, 157), SymbolRegular.LeafOne24),
@@ -74,20 +99,18 @@ public class OsdService
             _ => (profile.ToString(), Color.FromRgb(200, 200, 200), SymbolRegular.Settings24)
         };
 
-        _window?.ShowNotification("Профиль вентиляторов", name, symbol, color);
+        PostNotification("Профиль вентиляторов", name, symbol, color);
     }
 
     public void ShowRefreshRate(int hz)
     {
-        Initialize();
         Color col = hz >= 120 ? Color.FromRgb(180, 100, 255) : Color.FromRgb(0, 200, 255);
-        _window?.ShowNotification("Частота экрана", $"{hz} Гц", SymbolRegular.Desktop24, col);
+        PostNotification("Частота экрана", $"{hz} Гц", SymbolRegular.Desktop24, col);
     }
 
     public void ShowBatteryLimit(int percent)
     {
-        Initialize();
-        _window?.ShowNotification(
+        PostNotification(
             "Порог заряда аккумулятора",
             $"{percent}%",
             SymbolRegular.BatteryCharge24,
@@ -96,7 +119,6 @@ public class OsdService
 
     public void ShowGpuMode(AEROCC.Core.Gpu.GpuPowerMode mode)
     {
-        Initialize();
         var (title, desc, color, symbol) = mode switch
         {
             AEROCC.Core.Gpu.GpuPowerMode.Eco => ("Режим видеокарты", "Eco (Только iGPU / Макс. батарея)", Color.FromRgb(46, 229, 157), SymbolRegular.LeafOne24),
@@ -105,15 +127,14 @@ public class OsdService
             _ => ("Режим видеокарты", mode.ToString(), Color.FromRgb(200, 200, 200), SymbolRegular.DeviceEq24)
         };
 
-        _window?.ShowNotification(title, desc, symbol, color);
+        PostNotification(title, desc, symbol, color);
     }
 
     public void ShowTouchpad(bool enabled)
     {
-        Initialize();
         if (enabled)
         {
-            _window?.ShowNotification(
+            PostNotification(
                 "Сенсорная панель (Fn + F9)",
                 "Включена",
                 SymbolRegular.Cursor24,
@@ -121,7 +142,7 @@ public class OsdService
         }
         else
         {
-            _window?.ShowNotification(
+            PostNotification(
                 "Сенсорная панель (Fn + F9)",
                 "Заблокирована",
                 SymbolRegular.LockClosed24,
@@ -131,10 +152,9 @@ public class OsdService
 
     public void ShowAirplaneMode(bool enabled)
     {
-        Initialize();
         if (enabled)
         {
-            _window?.ShowNotification(
+            PostNotification(
                 "Режим полета (Fn + F10)",
                 "Включен (Беспроводные модули откл.)",
                 SymbolRegular.Airplane24,
@@ -142,7 +162,7 @@ public class OsdService
         }
         else
         {
-            _window?.ShowNotification(
+            PostNotification(
                 "Режим полета (Fn + F10)",
                 "Выключен (Связь активна)",
                 SymbolRegular.AirplaneTakeOff24,
@@ -152,10 +172,9 @@ public class OsdService
 
     public void ShowMicrophone(bool muted)
     {
-        Initialize();
         if (muted)
         {
-            _window?.ShowNotification(
+            PostNotification(
                 "Микрофон (Fn + F4)",
                 "Выключен (Звук отключен)",
                 SymbolRegular.MicOff24,
@@ -163,7 +182,7 @@ public class OsdService
         }
         else
         {
-            _window?.ShowNotification(
+            PostNotification(
                 "Микрофон (Fn + F4)",
                 "Включен (Активен)",
                 SymbolRegular.Mic24,
@@ -173,8 +192,7 @@ public class OsdService
 
     public void ShowBacklight(int percent)
     {
-        Initialize();
-        _window?.ShowNotification(
+        PostNotification(
             "Подсветка клавиатуры (Fn + Space)",
             percent > 0 ? $"{percent}%" : "Выключена (0%)",
             SymbolRegular.WeatherSunny24,

@@ -18,12 +18,14 @@ public class TouchpadManager
     private const ushort VK_F24 = 135;
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct INPUT
+    private struct MOUSEINPUT
     {
-        public uint type;
-        public KEYBDINPUT ki;
-        private short padding1;
-        private short padding2;
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -34,6 +36,30 @@ public class TouchpadManager
         public uint dwFlags;
         public uint time;
         public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HARDWAREINPUT
+    {
+        public uint uMsg;
+        public ushort wParamL;
+        public ushort wParamH;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct INPUT
+    {
+        [FieldOffset(0)]
+        public uint type;
+
+        [FieldOffset(8)]
+        public MOUSEINPUT mi;
+
+        [FieldOffset(8)]
+        public KEYBDINPUT ki;
+
+        [FieldOffset(8)]
+        public HARDWAREINPUT hi;
     }
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -75,10 +101,16 @@ public class TouchpadManager
                 MakeKeyUp(VK_LCONTROL)
             };
 
-            SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+            uint sent = SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+            if (sent == 0)
+            {
+                int err = Marshal.GetLastWin32Error();
+                System.Diagnostics.Debug.WriteLine($"[TouchpadManager] SendInput failed with Win32 error: {err}");
+            }
         }
-        catch
+        catch (Exception ex)
         {
+            System.Diagnostics.Debug.WriteLine($"[TouchpadManager] ToggleTouchpad exception: {ex.Message}");
         }
     }
 
