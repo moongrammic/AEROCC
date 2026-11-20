@@ -390,26 +390,63 @@ public class GigabyteWmiClient : IDisposable
         try
         {
             var scope = GetConnectedScope();
-            var classPath = new ManagementPath(ClassSet);
-            using var managementClass = new ManagementClass(scope, classPath, null);
             var sb = new StringBuilder();
-            sb.AppendLine("=== GB_WMIACPI_Set Methods ===");
-            foreach (MethodData md in managementClass.Methods)
+
+            // 1. GB_WMIACPI_Set
+            try
             {
-                sb.Append($"Method: {md.Name}(");
-                if (md.InParameters != null)
+                var classPath = new ManagementPath(ClassSet);
+                using var managementClass = new ManagementClass(scope, classPath, null);
+                sb.AppendLine("=== GB_WMIACPI_Set Methods ===");
+                foreach (MethodData md in managementClass.Methods)
                 {
-                    var paramList = new List<string>();
-                    foreach (PropertyData prop in md.InParameters.Properties)
+                    sb.Append($"Method: {md.Name}(");
+                    if (md.InParameters != null)
                     {
-                        paramList.Add($"{prop.Type} {prop.Name}");
+                        var paramList = new List<string>();
+                        foreach (PropertyData prop in md.InParameters.Properties)
+                        {
+                            paramList.Add($"{prop.Type} {prop.Name}");
+                        }
+                        sb.Append(string.Join(", ", paramList));
                     }
-                    sb.Append(string.Join(", ", paramList));
+                    sb.AppendLine(")");
                 }
-                sb.AppendLine(")");
+                sb.AppendLine("================================");
             }
-            sb.AppendLine("================================");
-            LogDebug(sb.ToString());
+            catch (Exception ex)
+            {
+                sb.AppendLine($"[GB_WMIACPI_Set Dump Error]: {ex.Message}");
+            }
+
+            // 2. GB_WMIACPI_Get
+            try
+            {
+                var classGetPath = new ManagementPath(ClassGet);
+                using var managementGetClass = new ManagementClass(scope, classGetPath, null);
+                sb.AppendLine("=== GB_WMIACPI_Get Methods ===");
+                foreach (MethodData md in managementGetClass.Methods)
+                {
+                    sb.Append($"Method: {md.Name}(");
+                    if (md.InParameters != null)
+                    {
+                        var paramList = new List<string>();
+                        foreach (PropertyData prop in md.InParameters.Properties)
+                        {
+                            paramList.Add($"{prop.Type} {prop.Name}");
+                        }
+                        sb.Append(string.Join(", ", paramList));
+                    }
+                    sb.AppendLine(")");
+                }
+                sb.AppendLine("================================");
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"[GB_WMIACPI_Get Dump Error]: {ex.Message}");
+            }
+
+            LogDebug(sb.ToString().TrimEnd());
         }
         catch (Exception ex)
         {

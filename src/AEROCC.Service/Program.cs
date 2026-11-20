@@ -65,6 +65,7 @@ builder.Logging.AddEventLog(settings =>
 {
     settings.SourceName = ServiceName;
 });
+builder.Logging.AddFilter<Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider>(null, LogLevel.Information);
 
 var host = builder.Build();
 await host.RunAsync();

@@ -13,21 +13,22 @@ public class AeroccIpcClient
     {
         try
         {
+            using var opCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            opCts.CancelAfter(timeoutMs + 2000);
+            var opToken = opCts.Token;
+
             using var pipe = new NamedPipeClientStream(".", IpcConstants.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-            await pipe.ConnectAsync(timeoutMs, ct);
+            await pipe.ConnectAsync(timeoutMs, opToken);
 
             IsServiceAvailable = true;
 
             var json = JsonSerializer.Serialize(request);
             var bytes = Encoding.UTF8.GetBytes(json + "\n");
-            await pipe.WriteAsync(bytes, ct);
-            await pipe.FlushAsync(ct);
+            await pipe.WriteAsync(bytes, opToken);
+            await pipe.FlushAsync(opToken);
 
             using var reader = new StreamReader(pipe, Encoding.UTF8);
-            using var readCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            readCts.CancelAfter(timeoutMs + 2000);
-
-            var responseLine = await reader.ReadLineAsync(readCts.Token);
+            var responseLine = await reader.ReadLineAsync(opToken);
             if (string.IsNullOrWhiteSpace(responseLine))
             {
                 return new IpcResponse { Success = false, ErrorMessage = "Пустой ответ от фоновой службы." };

@@ -68,7 +68,7 @@ public class AeroccIpcServer : IDisposable
                     NamedPipeServerStream.MaxAllowedServerInstances,
                     PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous,
-                    0, 0,
+                    4096, 4096,
                     pipeSecurity);
 
                 await serverStream.WaitForConnectionAsync(ct);
@@ -161,7 +161,6 @@ public class AeroccIpcServer : IDisposable
             var jsonResp = JsonSerializer.Serialize(response);
             await writer.WriteLineAsync(jsonResp.AsMemory(), clientToken);
             await writer.FlushAsync(clientToken);
-            try { stream.WaitForPipeDrain(); } catch { }
         }
         catch (OperationCanceledException)
         {
@@ -421,8 +420,8 @@ public class AeroccIpcServer : IDisposable
             stream.RunAsClient(() =>
             {
                 using var identity = WindowsIdentity.GetCurrent();
-                var principal = new WindowsPrincipal(identity);
-                authorized = principal.IsInRole(WindowsBuiltInRole.Administrator) || identity.IsSystem;
+                // Authorize local interactive desktop user, administrators, or LocalSystem
+                authorized = (identity.IsAuthenticated && !identity.IsAnonymous) || identity.IsSystem;
             });
             return authorized;
         }

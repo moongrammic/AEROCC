@@ -58,8 +58,8 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyServiceExeName}"; Parameters: "--install"; StatusMsg: "Установка и запуск службы AEROCCService..."; Tasks: startservice; Flags: runhidden waituntilterminated
 ; Register autostart task if selected (uses AEROCC.App with installer admin token to write explicit XML with battery & unlimited execution settings)
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--enable-autostart"; Tasks: autostartapp; Flags: runhidden waituntilterminated
-; Launch application after setup completes (runascurrentuser prevents CreateProcess Error 740 on elevated manifest)
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent runascurrentuser
+; Launch application after setup completes (shellexec handles requireAdministrator manifest elevation without Error 740)
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent shellexec
 
 [UninstallRun]
 ; Stop and remove service before files are deleted
