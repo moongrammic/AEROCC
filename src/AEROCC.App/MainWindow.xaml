@@ -455,8 +455,8 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Ellipse x:Name="IpcIndicator" Width="8" Height="8" Fill="#00E676" Margin="0,0,6,0" />
-                        <TextBlock x:Name="IpcStatusText" Text="Служба активна (IPC)" FontSize="11" Foreground="#70FFFFFF" />
+                        <Ellipse x:Name="IpcIndicator" Width="8" Height="8" Fill="#888888" Margin="0,0,6,0" />
+                        <TextBlock x:Name="IpcStatusText" Text="Подключение к службе..." FontSize="11" Foreground="#70FFFFFF" />
                     </StackPanel>
 
                     <Button Grid.Column="1" Content="Выход" Click="QuitButton_Click"

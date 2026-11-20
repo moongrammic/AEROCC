@@ -29,7 +29,7 @@ public class GigabyteWmiClient : IDisposable
     {
         using var identity = WindowsIdentity.GetCurrent();
         var principal = new WindowsPrincipal(identity);
-        return principal.IsInRole(WindowsBuiltInRole.Administrator);
+        return principal.IsInRole(WindowsBuiltInRole.Administrator) || identity.IsSystem;
     }
 
     internal static ConnectionOptions CreateOptions() => new()
@@ -617,6 +617,7 @@ public class GigabyteWmiClient : IDisposable
             }
 
             ResetScope();
+            LogDebug($"[WMI Get Error] {methodName}: {ex.Message}");
             System.Diagnostics.Debug.WriteLine($"[WMI Get Skipped] {methodName}: {ex.Message}");
             return null;
         }

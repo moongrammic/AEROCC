@@ -84,23 +84,21 @@ static void InstallService()
     Console.WriteLine($"Установка службы Windows: {ServiceName}...");
     Console.WriteLine($"Исполняемый файл: {exePath}");
 
+    RunSc($"stop {ServiceName}");
     bool created = RunSc($"create {ServiceName} binPath= \"\\\"{exePath}\\\"\" start= auto DisplayName= \"{ServiceDisplayName}\"");
-    if (created)
+    if (!created)
     {
-        RunSc($"description {ServiceName} \"Легковесная служба низкоуровневого управления Gigabyte Aero 16 (AEROCC)\"");
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("[✓] Служба AEROCCService успешно установлена с автозапуском!");
-        Console.ResetColor();
+        // Service already exists, update binPath and config to ensure clean upgrade
+        RunSc($"config {ServiceName} binPath= \"\\\"{exePath}\\\"\" start= auto DisplayName= \"{ServiceDisplayName}\"");
+    }
 
-        Console.WriteLine("Запуск службы...");
-        StartService();
-    }
-    else
-    {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine("[x] Не удалось установить службу AEROCCService.");
-        Console.ResetColor();
-    }
+    RunSc($"description {ServiceName} \"Легковесная служба низкоуровневого управления Gigabyte Aero 16 (AEROCC)\"");
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine("[✓] Служба AEROCCService успешно настроена с автозапуском!");
+    Console.ResetColor();
+
+    Console.WriteLine("Запуск службы...");
+    StartService();
 }
 
 static void UninstallService()

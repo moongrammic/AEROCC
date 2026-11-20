@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _isLoaded = true;
 
         _monitor.StatusUpdated += OnStatusUpdated;
         _monitor.FanProfileChanged += OnFanProfileChanged;
@@ -86,6 +87,7 @@ public partial class MainWindow : Window
     {
         PositionNearTray();
         _isLoaded = true;
+        OnStatusUpdated(_monitor.LatestStatus);
     }
 
     private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -305,6 +307,7 @@ public partial class MainWindow : Window
             else
             {
                 PositionNearTray();
+                OnStatusUpdated(_monitor.LatestStatus);
                 Show();
                 Activate();
             }
@@ -318,7 +321,13 @@ public partial class MainWindow : Window
             var menu = new ContextMenu();
 
             var openItem = new System.Windows.Controls.MenuItem { Header = "Открыть AEROCC" };
-            openItem.Click += (s, e) => { PositionNearTray(); Show(); Activate(); };
+            openItem.Click += (s, e) =>
+            {
+                PositionNearTray();
+                OnStatusUpdated(_monitor.LatestStatus);
+                Show();
+                Activate();
+            };
             menu.Items.Add(openItem);
 
             menu.Items.Add(new Separator());

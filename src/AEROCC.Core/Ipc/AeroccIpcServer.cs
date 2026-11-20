@@ -160,6 +160,8 @@ public class AeroccIpcServer : IDisposable
 
             var jsonResp = JsonSerializer.Serialize(response);
             await writer.WriteLineAsync(jsonResp.AsMemory(), clientToken);
+            await writer.FlushAsync(clientToken);
+            try { stream.WaitForPipeDrain(); } catch { }
         }
         catch (OperationCanceledException)
         {

@@ -41,8 +41,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-Name: "startservice"; Description: "Установить и запустить фоновую службу (AEROCCService)"; GroupDescription: "Служба и автозапуск:"; Flags: checkablealone
-Name: "autostartapp"; Description: "Автозапуск Control Center при входе в Windows (в трей)"; GroupDescription: "Служба и автозапуск:"; Flags: checkablealone
+Name: "startservice"; Description: "Установить и запустить фоновую службу (AEROCCService)"; GroupDescription: "Служба и автозапуск:"
+Name: "autostartapp"; Description: "Автозапуск Control Center при входе в Windows (в трей)"; GroupDescription: "Служба и автозапуск:"
 
 [Files]
 Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -56,8 +56,8 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 ; Install background service if selected
 Filename: "{app}\{#MyServiceExeName}"; Parameters: "--install"; StatusMsg: "Установка и запуск службы AEROCCService..."; Tasks: startservice; Flags: runhidden waituntilterminated
-; Register autostart task if selected (uses AEROCC.App to write explicit XML with battery & unlimited execution settings)
-Filename: "{app}\{#MyAppExeName}"; Parameters: "--enable-autostart"; Tasks: autostartapp; Flags: runhidden waituntilterminated runascurrentuser
+; Register autostart task if selected (uses AEROCC.App with installer admin token to write explicit XML with battery & unlimited execution settings)
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--enable-autostart"; Tasks: autostartapp; Flags: runhidden waituntilterminated
 ; Launch application after setup completes (runascurrentuser prevents CreateProcess Error 740 on elevated manifest)
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent runascurrentuser
 
@@ -69,3 +69,15 @@ Filename: "schtasks.exe"; Parameters: "/delete /tn ""AEROCC"" /f"; Flags: runhid
 ; Terminate running GUI or CLI instances if still open
 Filename: "taskkill.exe"; Parameters: "/f /im {#MyAppExeName}"; Flags: runhidden waituntilterminated
 Filename: "taskkill.exe"; Parameters: "/f /im {#MyCliExeName}"; Flags: runhidden waituntilterminated
+
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  // Stop running service and apps so files can be replaced cleanly during update
+  Exec('net.exe', 'stop AEROCCService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/f /im AEROCC.App.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/f /im AEROCC.Cli.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;

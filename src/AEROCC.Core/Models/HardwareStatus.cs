@@ -46,8 +46,8 @@ public record HardwareStatus
         if (ThermalSampledAtUtc is not { } sampledAt)
             return false;
 
-        var age = DateTimeOffset.UtcNow - sampledAt;
-        return age >= TimeSpan.Zero && age <= TimeSpan.FromSeconds(5);
+        var age = (DateTimeOffset.UtcNow - sampledAt).Duration();
+        return age <= TimeSpan.FromSeconds(30);
     }
 }
 
